@@ -4,6 +4,10 @@ Starts all subsystems:
   1. llama.cpp health check
   2. Wake word detector (background thread)
   3. Agent event loop (main thread)
+
+Usage:
+  python openclaw/main.py              # Full mode (on Raspberry Pi)
+  python openclaw/main.py --simulate   # Simulate mode (desktop testing)
 """
 
 import sys
@@ -11,17 +15,14 @@ import os
 import signal
 import logging
 import time
+import argparse
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from perception.wake_word import WakeWordDetector
-from perception.audio_capture import AudioCapture
-from perception.camera import Camera
 from openclaw.event_loop import EventLoop
 from openclaw.prompt_builder import PromptBuilder
 from openclaw.tool_parser import ToolParser
-from tts.piper_stream import PiperTTS
 
 logging.basicConfig(
     level=logging.INFO,
@@ -56,18 +57,39 @@ def wait_for_llama(url: str, timeout: int = 60):
 
 
 def main():
-    logger.info("═══ Conversational Robot starting ═══")
+    parser = argparse.ArgumentParser(description="Conversational Robot")
+    parser.add_argument("--simulate", action="store_true",
+                        help="Run in simulation mode (no Pi hardware needed)")
+    args = parser.parse_args()
+
+    simulate = args.simulate
+    if simulate:
+        logger.info("═══ Conversational Robot starting (SIMULATE MODE) ═══")
+    else:
+        logger.info("═══ Conversational Robot starting ═══")
 
     # Check llama.cpp server
     wait_for_llama(LLAMA_URL)
 
-    # Initialise subsystems
-    audio_capture = AudioCapture()
-    camera = Camera()
-    tts = PiperTTS(
-        piper_binary=os.path.join(ROBOT_DIR, "piper", "piper"),
-        voice_model=os.path.join(ROBOT_DIR, "models", "piper-voices", "en_US-lessac-medium.onnx"),
-    )
+    # Initialise subsystems — real hardware or mocks
+    if simulate:
+        from simulator.mock_hardware import MockAudioCapture, MockCamera, MockTTS, MockWakeWord
+        audio_capture = MockAudioCapture()
+        camera = MockCamera()
+        tts = MockTTS()
+        WakeClass = MockWakeWord
+    else:
+        from perception.audio_capture import AudioCapture
+        from perception.camera import Camera
+        from tts.piper_stream import PiperTTS
+        from perception.wake_word import WakeWordDetector
+        audio_capture = AudioCapture()
+        camera = Camera()
+        tts = PiperTTS(
+            piper_binary=os.path.join(ROBOT_DIR, "piper", "piper"),
+            voice_model=os.path.join(ROBOT_DIR, "models", "piper-voices", "en_US-lessac-medium.onnx"),
+        )
+        WakeClass = WakeWordDetector
     prompt_builder = PromptBuilder(
         system_prompt_path=SYSTEM_PROMPT_PATH,
         memory_path=MEMORY_PATH,
@@ -86,10 +108,13 @@ def main():
     )
 
     # Wire up wake word → event loop
-    wake = WakeWordDetector(on_wake=event_loop.on_wake_word)
+    wake = WakeClass(on_wake=event_loop.on_wake_word)
     wake.start()
 
-    logger.info("═══ Robot ready — listening for wake word ═══")
+    if simulate:
+        logger.info("═══ Robot ready — press ENTER to talk ═══")
+    else:
+        logger.info("═══ Robot ready — listening for wake word ═══")
 
     # Graceful shutdown
     def shutdown(sig, frame):
