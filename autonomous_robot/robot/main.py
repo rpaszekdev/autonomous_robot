@@ -17,7 +17,7 @@ from robot import config
 from robot.hardware import detect
 from robot.hardware.gpio import MockGpio, rpi_gpio
 from robot.hardware.motors import MockMotors, gpio_motors
-from robot.perception.camera import MockCamera, pi_camera
+from robot.perception.camera import MockCamera, OpenCVCamera, pi_camera
 from robot.perception.wake import KeyboardWake, OpenWakeWordWake
 from robot.runtime import Services, run
 from robot.tools.gpio_signal import GpioService
@@ -31,6 +31,17 @@ def _parse_args() -> argparse.Namespace:
         "--simulate",
         action="store_true",
         help="Force mock hardware (camera, motors, GPIO). Auto-enabled off-Pi.",
+    )
+    parser.add_argument(
+        "--webcam",
+        action="store_true",
+        help="Use the real Mac/Linux webcam via OpenCV instead of the mock camera.",
+    )
+    parser.add_argument(
+        "--webcam-index",
+        type=int,
+        default=0,
+        help="Webcam device index (default 0).",
     )
     parser.add_argument(
         "--wake-model",
@@ -72,7 +83,10 @@ async def _async_main(args: argparse.Namespace) -> int:
     # Wire services
     memory = MemoryStore(cfg.memory_path)
     if simulate:
-        camera = MockCamera()
+        if args.webcam:
+            camera = OpenCVCamera(index=args.webcam_index)
+        else:
+            camera = MockCamera()
         motors = MockMotors()
         gpio = MockGpio()
         wake = KeyboardWake(loop)
