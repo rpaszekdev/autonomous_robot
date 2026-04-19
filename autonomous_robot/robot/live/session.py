@@ -64,13 +64,13 @@ class GeminiLiveSession:
     async def send_audio_chunk(self, pcm16: bytes) -> None:
         assert self._session is not None
         await self._session.send_realtime_input(
-            media=types.Blob(data=pcm16, mime_type="audio/pcm;rate=16000")
+            audio=types.Blob(data=pcm16, mime_type="audio/pcm;rate=16000")
         )
 
     async def send_image(self, jpeg: bytes) -> None:
         assert self._session is not None
         await self._session.send_realtime_input(
-            media=types.Blob(data=jpeg, mime_type="image/jpeg")
+            video=types.Blob(data=jpeg, mime_type="image/jpeg")
         )
 
     async def send_tool_response(
