@@ -35,13 +35,23 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--webcam",
         action="store_true",
-        help="Use the real Mac/Linux webcam via OpenCV instead of the mock camera.",
+        help="Use the real local webcam via OpenCV (Mac/Linux).",
     )
     parser.add_argument(
         "--webcam-index",
         type=int,
         default=0,
         help="Webcam device index (default 0).",
+    )
+    parser.add_argument(
+        "--camera-url",
+        default=None,
+        help=(
+            "Open an IP camera stream instead of a local webcam. "
+            "Accepts RTSP, HTTP-MJPEG, or any URL OpenCV can decode. "
+            "Examples: rtsp://user:pass@192.168.1.50:554/stream1 · "
+            "http://192.168.1.50:8080/video"
+        ),
     )
     parser.add_argument(
         "--wake-model",
@@ -87,7 +97,10 @@ async def _async_main(args: argparse.Namespace) -> int:
     simulate = detect.should_simulate(args.simulate or cfg.simulate_forced)
 
     webcam_detail = ""
-    if args.webcam:
+    use_real_camera = bool(args.webcam or args.camera_url)
+    if args.camera_url:
+        webcam_detail = f"IP stream: {args.camera_url}"
+    elif args.webcam:
         cams = probe_webcams(max_index=max(args.webcam_index + 1, 4))
         match = next((c for c in cams if c["index"] == args.webcam_index), None)
         if match is None:
@@ -98,7 +111,14 @@ async def _async_main(args: argparse.Namespace) -> int:
             return 1
         webcam_detail = f"index {match['index']} · {match['width']}x{match['height']}"
     ui.startup(model=cfg.gemini_model, simulate=simulate,
-               webcam=args.webcam, webcam_detail=webcam_detail)
+               webcam=use_real_camera, webcam_detail=webcam_detail)
+    if not use_real_camera:
+        ui.console.print(
+            "  [yellow]⚠  Using MOCK CAMERA — Gemini will see a blue test image, "
+            "not your real world.[/]\n"
+            "  [dim]Add --webcam (local) or --camera-url rtsp://... "
+            "(IP cam) to use real video.[/]"
+        )
 
     loop = asyncio.get_running_loop()
     shutdown = asyncio.Event()
@@ -116,8 +136,10 @@ async def _async_main(args: argparse.Namespace) -> int:
     # Wire services
     memory = MemoryStore(cfg.memory_path)
     if simulate:
-        if args.webcam:
-            camera = OpenCVCamera(index=args.webcam_index)
+        if args.camera_url:
+            camera = OpenCVCamera(source=args.camera_url)
+        elif args.webcam:
+            camera = OpenCVCamera(source=args.webcam_index)
         else:
             camera = MockCamera()
         motors = MockMotors()

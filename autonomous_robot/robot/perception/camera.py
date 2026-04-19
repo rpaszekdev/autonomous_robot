@@ -46,19 +46,28 @@ class OpenCVCamera:
     MockCamera / PiCamera.
     """
 
-    def __init__(self, index: int = 0, width: int = 640, height: int = 480) -> None:
-        import cv2  # imported lazily — only when real webcam is selected
+    def __init__(
+        self,
+        source: int | str = 0,
+        width: int = 640,
+        height: int = 480,
+    ) -> None:
+        import cv2  # imported lazily — only when real camera is selected
         import time
 
         self._cv2 = cv2
-        self._cap = cv2.VideoCapture(index)
+        self._cap = cv2.VideoCapture(source)
         if not self._cap.isOpened():
-            raise RuntimeError(
-                f"Could not open webcam index {index}. On macOS, check "
-                "System Settings → Privacy & Security → Camera."
+            hint = (
+                "On macOS, check System Settings → Privacy & Security → Camera."
+                if isinstance(source, int)
+                else "Check the URL/credentials and network reachability."
             )
-        self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-        self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+            raise RuntimeError(f"Could not open camera {source!r}. {hint}")
+        if isinstance(source, int):
+            self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+            self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+        self._source_label = str(source)
         # Warm-up: discard frames until auto-exposure settles. The first
         # several reads on macOS are very dark; we want a non-black frame.
         start = time.time()
@@ -71,8 +80,8 @@ class OpenCVCamera:
                     break
             time.sleep(0.05)
         logger.info(
-            "[webcam] OpenCV camera ready (index=%d, brightness=%d)",
-            index, last_mean,
+            "[camera] OpenCV ready (source=%s, brightness=%d)",
+            self._source_label, last_mean,
         )
 
     def capture_jpeg(self) -> bytes:

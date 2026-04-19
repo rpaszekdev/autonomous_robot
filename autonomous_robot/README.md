@@ -132,15 +132,25 @@ reopen the terminal for changes to take effect.
 ### 6. Run it
 
 ```bash
-# Mock camera (no webcam)
+# Mock camera (blue test image — use only to verify plumbing)
 python -m robot.main --simulate
 
-# Real webcam
+# Real built-in webcam
 python -m robot.main --simulate --webcam
 
-# Specific webcam index (if you have multiple)
+# Specific local webcam index (if you have multiple)
 python -m robot.main --simulate --webcam --webcam-index 1
+
+# IP camera — RTSP (typical for most network cams)
+python -m robot.main --simulate --camera-url "rtsp://user:pass@192.168.1.50:554/stream1"
+
+# IP camera — HTTP MJPEG (common on phone-as-webcam apps like IP Webcam)
+python -m robot.main --simulate --camera-url "http://192.168.1.50:8080/video"
 ```
+
+⚠ **Without `--webcam` or `--camera-url` you get the mock camera**, which
+returns a blue test image — Gemini will say "I see a solid blue screen".
+Always add one of those flags to give Gemini real vision.
 
 **Usage:**
 1. Press **Enter** when you see `🎙 LISTENING`
@@ -247,9 +257,10 @@ python -m robot.main [--simulate] [--webcam] [--webcam-index N]
 ```
 
 - `--simulate` — force mock hardware (auto-on when not on a Pi)
-- `--webcam` — use the real webcam via OpenCV (Mac/Linux)
-- `--webcam-index N` — pick a specific webcam (default 0)
-- `--list-cameras` — scan indices 0–3 and exit
+- `--webcam` — use the real local webcam via OpenCV (Mac/Linux)
+- `--webcam-index N` — pick a specific local webcam (default 0)
+- `--camera-url URL` — connect to an IP camera (RTSP / HTTP MJPEG / any OpenCV-readable URL)
+- `--list-cameras` — scan local indices 0–3 and exit
 - `--wake-model PATH` — openWakeWord `.onnx` path (Pi only)
 
 ---
