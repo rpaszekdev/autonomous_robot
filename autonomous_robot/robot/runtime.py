@@ -116,7 +116,21 @@ async def _run_one_session(
         }
     )
 
-    mic: MicStream | None = None
+    mic_ref: list[MicStream | None] = [None]
+
+    def on_state_change(new_state: str) -> None:
+        # Mute mic while Gemini speaks / a tool runs → prevents speaker
+        # echo from tripping the server VAD and interrupting Gemini.
+        mic = mic_ref[0]
+        if mic is None:
+            return
+        should_mute = new_state == "gemini_speaking" or new_state.startswith("tool:")
+        mic.set_muted(should_mute)
+        if should_mute:
+            ui.info(f"[dim]🔇 mic muted ({new_state})[/]")
+        else:
+            ui.info(f"[dim]🔈 mic unmuted ({new_state})[/]")
+
     session = GeminiLiveSession(
         api_key=cfg.google_api_key,
         model=cfg.gemini_model,
@@ -124,6 +138,7 @@ async def _run_one_session(
         tools=TOOLS,
         on_audio_out=play_audio,
         on_tool_call=on_tool_call,
+        on_state_change=on_state_change,
     )
 
     try:
@@ -144,6 +159,7 @@ async def _run_one_session(
 
             mic = MicStream(session.send_audio_chunk, device=cfg.input_device)
             mic.start()
+            mic_ref[0] = mic
             ui.mic_started()
             ui.speaker_started()
             ui.state_listening()
@@ -162,8 +178,10 @@ async def _run_one_session(
                 for exc in group.exceptions:
                     logger.warning("Session task exited: %r", exc)
     finally:
+        mic = mic_ref[0]
         if mic is not None:
             mic.stop()
+        mic_ref[0] = None
         await speaker.cancel()
         speaker.stop()
         reminder_service.cancel_all()

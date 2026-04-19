@@ -36,6 +36,7 @@ class MicStream:
         self._stream: sd.RawInputStream | None = None
         self._running = False
         self._dropped = 0
+        self._muted = False
 
     def _enqueue(self, data: bytes) -> None:
         # Runs on the event loop thread — catch QueueFull here.
@@ -69,9 +70,28 @@ class MicStream:
         try:
             while self._running:
                 chunk = await self._queue.get()
+                if self._muted:
+                    continue  # drop while Gemini is speaking
                 await self._on_chunk(chunk)
         except asyncio.CancelledError:
             raise
+
+    def set_muted(self, muted: bool) -> None:
+        """Drop incoming audio while muted. Also clears the queue so stale
+        audio captured during Gemini playback doesn't leak out later."""
+        was_muted = self._muted
+        self._muted = muted
+        if muted and not was_muted:
+            self._drain_queue()
+        if not muted and was_muted:
+            self._drain_queue()
+
+    def _drain_queue(self) -> None:
+        try:
+            while True:
+                self._queue.get_nowait()
+        except asyncio.QueueEmpty:
+            pass
 
     def stop(self) -> None:
         self._running = False

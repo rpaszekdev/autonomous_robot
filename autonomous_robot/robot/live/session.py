@@ -12,6 +12,7 @@ import logging
 from typing import Awaitable, Callable
 
 import time
+from typing import Callable
 
 from google import genai
 from google.genai import types
@@ -33,6 +34,7 @@ class GeminiLiveSession:
         tools: list[types.FunctionDeclaration],
         on_audio_out: AudioOut,
         on_tool_call: ToolCallHandler,
+        on_state_change: "Callable[[str], None] | None" = None,
     ) -> None:
         self._client = genai.Client(api_key=api_key)
         self._model = model
@@ -44,9 +46,13 @@ class GeminiLiveSession:
             tools=[types.Tool(function_declarations=tools)],
             input_audio_transcription=types.AudioTranscriptionConfig(),
             output_audio_transcription=types.AudioTranscriptionConfig(),
+            realtime_input_config=types.RealtimeInputConfig(
+                activity_handling=types.ActivityHandling.NO_INTERRUPTION,
+            ),
         )
         self._on_audio_out = on_audio_out
         self._on_tool_call = on_tool_call
+        self._on_state_change = on_state_change
         self._session = None
         self._ctx = None
         self._input_buf: list[str] = []
@@ -172,6 +178,11 @@ class GeminiLiveSession:
                 self._user_turn_end = time.monotonic()
         self._state = new_state
         self._state_entered_at = time.monotonic()
+        if self._on_state_change:
+            try:
+                self._on_state_change(new_state)
+            except Exception:
+                logger.exception("on_state_change callback failed")
         if new_state == "listening":
             ui.state_listening()
         elif new_state == "user_speaking":
