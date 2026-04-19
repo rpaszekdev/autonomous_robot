@@ -36,7 +36,7 @@ class KeyboardWake:
         set_event = _make_event_setter(self._loop, self._event)
         while self._running:
             try:
-                input("\n>>> Press ENTER to wake the robot: ")
+                input()  # wake prompt is rendered by runtime via ui module
             except (EOFError, KeyboardInterrupt):
                 return
             set_event()

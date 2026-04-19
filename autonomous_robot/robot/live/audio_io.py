@@ -32,18 +32,25 @@ class MicStream:
         self._on_chunk = on_chunk
         self._device = device
         self._loop = asyncio.get_running_loop()
-        self._queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=32)
+        self._queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=128)
         self._stream: sd.RawInputStream | None = None
         self._running = False
+        self._dropped = 0
+
+    def _enqueue(self, data: bytes) -> None:
+        # Runs on the event loop thread — catch QueueFull here.
+        try:
+            self._queue.put_nowait(data)
+        except asyncio.QueueFull:
+            self._dropped += 1
+            if self._dropped % 20 == 1:
+                logger.debug("mic backpressure: dropped %d frames", self._dropped)
 
     def _callback(self, indata, frames, time_info, status) -> None:
         if status:
             logger.debug("mic status: %s", status)
         data = bytes(indata)
-        try:
-            self._loop.call_soon_threadsafe(self._queue.put_nowait, data)
-        except asyncio.QueueFull:
-            logger.warning("mic queue full — dropping frame")
+        self._loop.call_soon_threadsafe(self._enqueue, data)
 
     def start(self) -> None:
         self._stream = sd.RawInputStream(

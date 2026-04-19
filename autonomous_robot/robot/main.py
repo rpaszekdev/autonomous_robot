@@ -13,11 +13,11 @@ import logging
 import signal
 import sys
 
-from robot import config
+from robot import config, ui
 from robot.hardware import detect
 from robot.hardware.gpio import MockGpio, rpi_gpio
 from robot.hardware.motors import MockMotors, gpio_motors
-from robot.perception.camera import MockCamera, OpenCVCamera, pi_camera
+from robot.perception.camera import MockCamera, OpenCVCamera, pi_camera, probe_webcams
 from robot.perception.wake import KeyboardWake, OpenWakeWordWake
 from robot.runtime import Services, run
 from robot.tools.gpio_signal import GpioService
@@ -48,30 +48,63 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         help="Path to openWakeWord .onnx model (Pi only).",
     )
+    parser.add_argument(
+        "--list-cameras",
+        action="store_true",
+        help="List all available webcams (with index + resolution) and exit.",
+    )
     return parser.parse_args()
 
 
-def _setup_logging() -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
-        datefmt="%H:%M:%S",
+def _list_cameras_and_exit() -> int:
+    from robot import ui
+    ui.install_logging()
+    ui.console.print("[bold]Scanning webcams (indices 0–3)…[/]")
+    cams = probe_webcams(max_index=4)
+    if not cams:
+        ui.error("No webcams found. On macOS, allow camera access in "
+                 "System Settings → Privacy & Security → Camera, "
+                 "then restart Terminal.")
+        return 1
+    for c in cams:
+        ui.console.print(
+            f"  [green]✓[/] index=[bold]{c['index']}[/]  "
+            f"{c['width']}x{c['height']}  [dim]backend={c['backend']}[/]"
+        )
+    ui.console.print(
+        f"\n[dim]Use:  python -m robot.main --simulate --webcam "
+        f"--webcam-index <N>[/]"
     )
+    return 0
+
+
+def _setup_logging() -> None:
+    ui.install_logging(level=logging.INFO)
 
 
 async def _async_main(args: argparse.Namespace) -> int:
     cfg = config.load()
     simulate = detect.should_simulate(args.simulate or cfg.simulate_forced)
 
-    logging.info(
-        "Starting robot — simulate=%s, model=%s", simulate, cfg.gemini_model
-    )
+    webcam_detail = ""
+    if args.webcam:
+        cams = probe_webcams(max_index=max(args.webcam_index + 1, 4))
+        match = next((c for c in cams if c["index"] == args.webcam_index), None)
+        if match is None:
+            ui.error(
+                f"Webcam index {args.webcam_index} not available. "
+                "Run `python -m robot.main --list-cameras` to see options."
+            )
+            return 1
+        webcam_detail = f"index {match['index']} · {match['width']}x{match['height']}"
+    ui.startup(model=cfg.gemini_model, simulate=simulate,
+               webcam=args.webcam, webcam_detail=webcam_detail)
 
     loop = asyncio.get_running_loop()
     shutdown = asyncio.Event()
 
     def _on_signal() -> None:
-        logging.info("Shutdown signal received")
+        ui.info("Shutdown signal received — closing cleanly")
         shutdown.set()
 
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -118,8 +151,10 @@ async def _async_main(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
-    _setup_logging()
     args = _parse_args()
+    if args.list_cameras:
+        return _list_cameras_and_exit()
+    _setup_logging()
     try:
         return asyncio.run(_async_main(args))
     except KeyboardInterrupt:

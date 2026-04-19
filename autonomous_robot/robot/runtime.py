@@ -18,6 +18,7 @@ import logging
 from dataclasses import dataclass
 from typing import Awaitable, Callable
 
+from robot import ui
 from robot.config import Config
 from robot.live.audio_io import MicStream, SpeakerStream, verify_devices
 from robot.live.dispatcher import ToolDispatcher
@@ -50,7 +51,7 @@ async def run(cfg: Config, services: Services, shutdown: asyncio.Event) -> None:
     session_count = 0
 
     while not shutdown.is_set():
-        logger.info("Waiting for wake...")
+        ui.wake_prompt()
         wake_task = asyncio.create_task(services.wake.wait())
         shutdown_task = asyncio.create_task(shutdown.wait())
         done, pending = await asyncio.wait(
@@ -62,14 +63,15 @@ async def run(cfg: Config, services: Services, shutdown: asyncio.Event) -> None:
             break
 
         session_count += 1
-        logger.info("── Session %d starting ──", session_count)
+        ui.session_start(session_count)
         try:
             await _run_one_session(cfg, services, shutdown)
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as exc:
+            ui.error(f"Session crashed: {exc}")
             logger.exception("Session crashed; returning to wake loop")
-        logger.info("── Session %d ended ──", session_count)
+        ui.session_end(session_count)
 
 
 async def _run_one_session(
@@ -78,7 +80,11 @@ async def _run_one_session(
     speaker = SpeakerStream(device=cfg.output_device)
     speaker.start()
 
+    audio_chunks_received = [0]
+
     async def play_audio(pcm: bytes) -> None:
+        audio_chunks_received[0] += 1
+        ui.audio_out_chunk(len(pcm))
         await speaker.play(pcm)
 
     async def speak_text(text: str) -> None:
@@ -88,7 +94,10 @@ async def _run_one_session(
     reminder_service = ReminderService(speak_text)
 
     async def on_tool_call(name: str, args: dict) -> dict:
-        return await dispatcher(name, args)
+        ui.tool_call(name, args)
+        result = await dispatcher(name, args)
+        ui.tool_result(name, result)
+        return result
 
     async def send_image_to_session(jpeg: bytes) -> None:
         await session.send_image(jpeg)
@@ -121,12 +130,23 @@ async def _run_one_session(
         async with session:
             # Initial visual context: one camera frame per session open.
             try:
-                await session.send_image(services.camera.capture_jpeg())
+                jpeg = services.camera.capture_jpeg()
+                await session.send_image(jpeg)
+                ui.camera_frame_sent(len(jpeg), source="session open")
+                if len(jpeg) < 8000:
+                    ui.info(
+                        f"⚠  initial frame only {len(jpeg)} bytes — camera "
+                        "may be dark/uninitialised; ask \"what do you see?\" "
+                        "for a fresh frame"
+                    )
             except Exception:
                 logger.exception("Initial camera frame failed; continuing")
 
             mic = MicStream(session.send_audio_chunk, device=cfg.input_device)
             mic.start()
+            ui.mic_started()
+            ui.speaker_started()
+            ui.state_listening()
 
             try:
                 async with asyncio.TaskGroup() as tg:
@@ -144,6 +164,8 @@ async def _run_one_session(
         await speaker.cancel()
         speaker.stop()
         reminder_service.cancel_all()
+        if audio_chunks_received[0] > 0:
+            ui.audio_out_complete()
 
 
 async def _session_watchdog(cfg: Config, shutdown: asyncio.Event) -> None:

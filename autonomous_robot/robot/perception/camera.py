@@ -48,6 +48,7 @@ class OpenCVCamera:
 
     def __init__(self, index: int = 0, width: int = 640, height: int = 480) -> None:
         import cv2  # imported lazily — only when real webcam is selected
+        import time
 
         self._cv2 = cv2
         self._cap = cv2.VideoCapture(index)
@@ -58,10 +59,21 @@ class OpenCVCamera:
             )
         self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
         self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-        # Discard warm-up frames (first ones are often black/dim)
-        for _ in range(5):
-            self._cap.read()
-        logger.info("[webcam] OpenCV camera ready (index=%d)", index)
+        # Warm-up: discard frames until auto-exposure settles. The first
+        # several reads on macOS are very dark; we want a non-black frame.
+        start = time.time()
+        last_mean = 0
+        for _ in range(30):
+            ok, frame = self._cap.read()
+            if ok and frame is not None:
+                last_mean = int(frame.mean())
+                if last_mean > 40 or (time.time() - start) > 1.2:
+                    break
+            time.sleep(0.05)
+        logger.info(
+            "[webcam] OpenCV camera ready (index=%d, brightness=%d)",
+            index, last_mean,
+        )
 
     def capture_jpeg(self) -> bytes:
         ok, frame = self._cap.read()
@@ -77,6 +89,38 @@ class OpenCVCamera:
             self._cap.release()
         except Exception:
             pass
+
+
+def probe_webcams(max_index: int = 4) -> list[dict]:
+    """Return a list of available webcam indices with their properties.
+
+    On macOS the first probe triggers the camera permission prompt.
+    Silences cv2's stderr noise during probing.
+    """
+    import contextlib
+    import os
+    import sys
+
+    import cv2
+
+    results: list[dict] = []
+    devnull = os.open(os.devnull, os.O_WRONLY)
+    saved_stderr = os.dup(2)
+    try:
+        os.dup2(devnull, 2)
+        for idx in range(max_index):
+            cap = cv2.VideoCapture(idx)
+            if cap.isOpened():
+                w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                backend = cap.getBackendName()
+                results.append({"index": idx, "width": w, "height": h, "backend": backend})
+            cap.release()
+    finally:
+        os.dup2(saved_stderr, 2)
+        os.close(devnull)
+        os.close(saved_stderr)
+    return results
 
 
 def pi_camera(width: int = 640, height: int = 480) -> Camera:

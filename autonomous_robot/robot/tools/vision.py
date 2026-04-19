@@ -7,6 +7,7 @@ from __future__ import annotations
 import logging
 from typing import Awaitable, Callable
 
+from robot import ui
 from robot.perception.camera import Camera
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,7 @@ class VisionService:
             logger.exception("camera capture failed")
             return {"error": f"camera capture failed: {exc}"}
         await self._send_image(jpeg)
+        ui.camera_frame_sent(len(jpeg), source="describe_scene")
         return {
             "ok": True,
             "bytes": len(jpeg),
