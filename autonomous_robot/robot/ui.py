@@ -144,3 +144,18 @@ def user_transcript(text: str) -> None:
 def gemini_transcript(text: str) -> None:
     if text.strip():
         console.print(f"  [green]gemini:[/]  [italic]\"{text.strip()}\"[/]")
+
+
+def heartbeat(state: str, elapsed: float, mic_chunks: int, out_chunks: int) -> None:
+    console.print(
+        f"  [dim]⏲  {state:<14} · {elapsed:4.1f}s in state · "
+        f"mic {mic_chunks:>3} · audio {out_chunks:>3}[/]"
+    )
+
+
+def turn_timing(label: str, seconds: float) -> None:
+    console.print(f"  [dim]⏱  {label}: {seconds*1000:.0f} ms[/]")
+
+
+def server_event(name: str) -> None:
+    console.print(f"  [dim]← server: {name}[/]")

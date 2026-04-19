@@ -155,6 +155,9 @@ async def _run_one_session(
                     tg.create_task(
                         _session_watchdog(cfg, shutdown), name="watchdog"
                     )
+                    tg.create_task(
+                        _heartbeat(session, shutdown), name="heartbeat"
+                    )
             except* Exception as group:
                 for exc in group.exceptions:
                     logger.warning("Session task exited: %r", exc)
@@ -166,6 +169,36 @@ async def _run_one_session(
         reminder_service.cancel_all()
         if audio_chunks_received[0] > 0:
             ui.audio_out_complete()
+
+
+async def _heartbeat(session: GeminiLiveSession, shutdown: asyncio.Event) -> None:
+    """Pulse a status line every 3 seconds while waiting in a quiet state.
+
+    Only emits when the state has been unchanged for >=3 seconds, so active
+    conversation doesn't get spammed.
+    """
+    last_mic = 0
+    last_audio = 0
+    while not shutdown.is_set():
+        try:
+            await asyncio.wait_for(shutdown.wait(), timeout=3.0)
+            return
+        except asyncio.TimeoutError:
+            pass
+        elapsed = session.state_elapsed()
+        mic = session.mic_chunks_sent
+        audio = session.audio_chunks_received
+        # Emit only in "waiting" states OR if counters moved since last tick
+        quiet_state = session.current_state in ("listening", "")
+        moved = (mic != last_mic) or (audio != last_audio)
+        if elapsed >= 3.0 and (quiet_state or moved):
+            ui.heartbeat(
+                session.current_state or "opening",
+                elapsed,
+                mic,
+                audio,
+            )
+        last_mic, last_audio = mic, audio
 
 
 async def _session_watchdog(cfg: Config, shutdown: asyncio.Event) -> None:

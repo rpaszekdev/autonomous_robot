@@ -11,6 +11,8 @@ from __future__ import annotations
 import logging
 from typing import Awaitable, Callable
 
+import time
+
 from google import genai
 from google.genai import types
 
@@ -49,7 +51,12 @@ class GeminiLiveSession:
         self._ctx = None
         self._input_buf: list[str] = []
         self._output_buf: list[str] = []
-        self._state: str = ""  # tracks last announced state
+        self._state: str = ""
+        self._state_entered_at: float = time.monotonic()
+        self.mic_chunks_sent: int = 0
+        self.audio_chunks_received: int = 0
+        self._user_turn_end: float | None = None
+        self._last_server_msg_at: float = time.monotonic()
 
     async def __aenter__(self) -> "GeminiLiveSession":
         self._ctx = self._client.aio.live.connect(
@@ -73,6 +80,7 @@ class GeminiLiveSession:
         await self._session.send_realtime_input(
             audio=types.Blob(data=pcm16, mime_type="audio/pcm;rate=16000")
         )
+        self.mic_chunks_sent += 1
 
     async def send_image(self, jpeg: bytes) -> None:
         assert self._session is not None
@@ -93,6 +101,7 @@ class GeminiLiveSession:
             await self._dispatch(message)
 
     async def _dispatch(self, message) -> None:
+        self._last_server_msg_at = time.monotonic()
         server_content = getattr(message, "server_content", None)
         if server_content is not None:
             # User speech transcription (what Gemini thinks you said)
@@ -113,11 +122,28 @@ class GeminiLiveSession:
                 for part in getattr(model_turn, "parts", []) or []:
                     inline = getattr(part, "inline_data", None)
                     if inline and inline.data:
+                        if self.audio_chunks_received == 0 and self._user_turn_end:
+                            latency = time.monotonic() - self._user_turn_end
+                            ui.turn_timing("first response chunk", latency)
+                        self.audio_chunks_received += 1
                         self._set_state("gemini_speaking")
                         await self._on_audio_out(inline.data)
 
+            if getattr(server_content, "interrupted", False):
+                ui.server_event("interrupted (Gemini was cut off)")
+
+            if getattr(server_content, "generation_complete", False):
+                ui.server_event("generation_complete")
+
             if getattr(server_content, "turn_complete", False):
+                ui.server_event("turn_complete")
                 self._flush_transcripts()
+                # If Gemini just finished speaking, total turn latency
+                if self._user_turn_end is not None and self.audio_chunks_received > 0:
+                    total = time.monotonic() - self._user_turn_end
+                    ui.turn_timing("full turn", total)
+                self._user_turn_end = None
+                self.audio_chunks_received = 0
                 self._set_state("listening")
 
         # Tool calls
@@ -139,10 +165,13 @@ class GeminiLiveSession:
     def _set_state(self, new_state: str) -> None:
         if new_state == self._state:
             return
-        # Flush buffers at major transitions
-        if new_state == "gemini_speaking" and self._input_buf:
+        # Flush user buffer when leaving user-speaking
+        if self._state == "user_speaking" and new_state != "user_speaking":
             self._flush_user_buf()
+            if self._user_turn_end is None:
+                self._user_turn_end = time.monotonic()
         self._state = new_state
+        self._state_entered_at = time.monotonic()
         if new_state == "listening":
             ui.state_listening()
         elif new_state == "user_speaking":
@@ -151,6 +180,13 @@ class GeminiLiveSession:
             ui.state_speaking()
         elif new_state.startswith("tool:"):
             ui.state_tool_running(new_state[5:])
+
+    @property
+    def current_state(self) -> str:
+        return self._state
+
+    def state_elapsed(self) -> float:
+        return time.monotonic() - self._state_entered_at
 
     def _flush_transcripts(self) -> None:
         self._flush_user_buf()
