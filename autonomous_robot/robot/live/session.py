@@ -42,9 +42,12 @@ class GeminiLiveSession:
     ) -> None:
         self._client = genai.Client(api_key=api_key)
         self._model = model
-        # Enable session resumption so newer models (e.g. gemini-3.1-flash-
-        # live-preview) that close the receive stream after each turn can
-        # be transparently reconnected with full context preserved.
+        # gemini-3.1-flash-live-preview closes the receive stream after
+        # every turn_complete. We reconnect fresh — keeping session
+        # resumption off because the handles the server emits for intentional
+        # turn-close are not accepted for replay (returns 1007
+        # "invalid argument"). Conversation history is re-seeded via the
+        # system_instruction so the model still has persistent user facts.
         self._config = types.LiveConnectConfig(
             response_modalities=["AUDIO"],
             system_instruction=types.Content(
@@ -53,11 +56,8 @@ class GeminiLiveSession:
             tools=[types.Tool(function_declarations=tools)],
             input_audio_transcription=types.AudioTranscriptionConfig(),
             output_audio_transcription=types.AudioTranscriptionConfig(),
-            session_resumption=types.SessionResumptionConfig(
-                handle=resumption_handle
-            ),
         )
-        self.last_resumption_handle: str | None = resumption_handle
+        self.last_resumption_handle: str | None = None
         self._on_audio_out = on_audio_out
         self._on_tool_call = on_tool_call
         self._on_state_change = on_state_change

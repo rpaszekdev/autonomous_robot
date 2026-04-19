@@ -157,15 +157,16 @@ async def _run_one_session(
                 _delayed_unmute(mic, new_state), name="delayed_unmute"
             )
 
-    # Sticky across reconnects: server closes the receive stream after each
-    # turn on newer models (e.g. gemini-3.1-flash-live-preview). We reopen
-    # transparently with this handle so the conversation keeps full context.
-    resumption_handle: str | None = None
-    session_sent_initial_frame = False
+    # gemini-3.1-flash-live-preview closes the stream after each turn_complete.
+    # We transparently reopen — conversation short-term context is reset on
+    # reconnect, but persistent memory + system_instruction carry across.
+    socket_count = 0
+    mic_announced = False
     ui.speaker_started()
 
     try:
         while not shutdown.is_set():
+            socket_count += 1
             session = GeminiLiveSession(
                 api_key=cfg.google_api_key,
                 model=cfg.gemini_model,
@@ -174,31 +175,35 @@ async def _run_one_session(
                 on_audio_out=play_audio,
                 on_tool_call=on_tool_call,
                 on_state_change=on_state_change,
-                resumption_handle=resumption_handle,
             )
             server_closed_stream = False
 
             async with session:
-                # Send a fresh camera frame on the FIRST socket of this wake.
-                # Subsequent reconnects don't re-send — context is resumed.
-                if not session_sent_initial_frame:
-                    try:
-                        jpeg = services.camera.capture_jpeg()
-                        await session.send_image(jpeg)
-                        ui.camera_frame_sent(len(jpeg), source="session open")
-                        if len(jpeg) < 8000:
-                            ui.info(
-                                f"⚠  initial frame only {len(jpeg)} bytes — "
-                                "camera may be dark/uninitialised; ask "
-                                "\"what do you see?\" for a fresh frame"
-                            )
-                        session_sent_initial_frame = True
-                    except Exception:
-                        logger.exception("Initial camera frame failed; continuing")
-                else:
+                # Every fresh socket = fresh context for Gemini. Always
+                # send a current camera frame so it isn't hallucinating
+                # about the environment.
+                if socket_count > 1:
                     ui.info(
-                        f"[dim]↻ reconnected with resumption handle "
-                        f"{(resumption_handle or '')[:12]}…[/]"
+                        f"[dim]↻ reconnected (socket #{socket_count}) — "
+                        "short-term context reset, persistent memory kept[/]"
+                    )
+                try:
+                    jpeg = services.camera.capture_jpeg()
+                    await session.send_image(jpeg)
+                    ui.camera_frame_sent(
+                        len(jpeg),
+                        source=f"socket #{socket_count} open",
+                    )
+                    if len(jpeg) < 8000:
+                        ui.info(
+                            f"⚠  initial frame only {len(jpeg)} bytes — "
+                            "camera may be dark/uninitialised; ask "
+                            "\"what do you see?\" for a fresh frame"
+                        )
+                except Exception:
+                    logger.exception(
+                        "Camera frame failed on socket #%d; continuing",
+                        socket_count,
                     )
 
                 mic = MicStream(
@@ -208,9 +213,9 @@ async def _run_one_session(
                 )
                 mic.start()
                 mic_ref[0] = mic
-                if not session_sent_initial_frame:
-                    # first-ever mic announcement
+                if not mic_announced:
                     ui.mic_started()
+                    mic_announced = True
                 ui.state_listening()
 
                 try:
@@ -254,14 +259,7 @@ async def _run_one_session(
                 break
             if shutdown.is_set():
                 break
-            # Carry forward the handle for the next socket.
-            resumption_handle = session.last_resumption_handle
-            if resumption_handle is None:
-                ui.error(
-                    "server closed stream but no resumption handle was "
-                    "received — cannot reconnect"
-                )
-                break
+            # Fresh reconnect — no handle to carry forward.
     finally:
         pending = unmute_task_ref[0]
         if pending is not None and not pending.done():
