@@ -159,3 +159,38 @@ def turn_timing(label: str, seconds: float) -> None:
 
 def server_event(name: str) -> None:
     console.print(f"  [dim]← server: {name}[/]")
+
+
+# ── Debug / diagnostic streams ──────────────────────────────
+# These are verbose on purpose — meant for the "why isn't turn 2 working?"
+# phase. Toggle with env DEBUG_LIVE=1.
+
+def mic_tick(real: int, silent: int, avg_rms: int, peak_rms: int) -> None:
+    """One-second rollup of outgoing mic traffic."""
+    style = "green" if real > 0 and peak_rms > 300 else "dim"
+    console.print(
+        f"  [{style}]📤 mic-1s · real={real:>2} silent={silent:>2} "
+        f"avg_rms={avg_rms:>5} peak_rms={peak_rms:>5}[/]"
+    )
+
+
+def mic_voice_event(kind: str, rms: int) -> None:
+    """Fired when we cross from silence→voice or voice→silence client-side."""
+    if kind == "voice_start":
+        console.print(f"  [bold yellow]🎤▶ voice onset (rms={rms})[/]")
+    else:
+        console.print(f"  [dim]🎤⏸ voice offset[/]")
+
+
+def server_raw(summary: str) -> None:
+    console.print(f"  [dim magenta]← raw: {summary}[/]")
+
+
+def recv_wait(seconds: float) -> None:
+    console.print(
+        f"  [dim red]… recv_loop: {seconds:.1f}s since last server message[/]"
+    )
+
+
+def audio_send_error(exc: Exception) -> None:
+    console.print(f"  [bold red]✖ send_audio_chunk failed: {exc!r}[/]")

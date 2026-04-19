@@ -36,6 +36,11 @@ from robot.tools.vision import VisionService
 
 logger = logging.getLogger(__name__)
 
+# Keep the mic muted this long after Gemini stops speaking, so the
+# SpeakerStream's buffered tail finishes playing before the mic goes hot.
+# Without this, the speaker tail feeds back into the mic and corrupts VAD.
+POST_SPEAK_MUTE_MS = 350
+
 
 @dataclass
 class Services:
@@ -117,6 +122,16 @@ async def _run_one_session(
     )
 
     mic_ref: list[MicStream | None] = [None]
+    unmute_task_ref: list[asyncio.Task | None] = [None]
+    loop = asyncio.get_running_loop()
+
+    async def _delayed_unmute(mic: MicStream, state: str) -> None:
+        try:
+            await asyncio.sleep(POST_SPEAK_MUTE_MS / 1000)
+            mic.set_muted(False)
+            ui.info(f"[dim]🔈 mic unmuted ({state})[/]")
+        except asyncio.CancelledError:
+            pass
 
     def on_state_change(new_state: str) -> None:
         # Mute mic while Gemini speaks / a tool runs → prevents speaker
@@ -124,63 +139,137 @@ async def _run_one_session(
         mic = mic_ref[0]
         if mic is None:
             return
+
+        # Cancel any pending delayed unmute — a new state change overrides it.
+        pending = unmute_task_ref[0]
+        if pending is not None and not pending.done():
+            pending.cancel()
+            unmute_task_ref[0] = None
+
         should_mute = new_state == "gemini_speaking" or new_state.startswith("tool:")
-        mic.set_muted(should_mute)
         if should_mute:
+            mic.set_muted(True)
             ui.info(f"[dim]🔇 mic muted ({new_state})[/]")
         else:
-            ui.info(f"[dim]🔈 mic unmuted ({new_state})[/]")
+            # Hold the mute briefly so the speaker tail drains before the mic
+            # goes hot. Prevents Gemini's own voice from leaking back in.
+            unmute_task_ref[0] = loop.create_task(
+                _delayed_unmute(mic, new_state), name="delayed_unmute"
+            )
 
-    session = GeminiLiveSession(
-        api_key=cfg.google_api_key,
-        model=cfg.gemini_model,
-        system_instruction=_build_system_instruction(cfg, services.memory),
-        tools=TOOLS,
-        on_audio_out=play_audio,
-        on_tool_call=on_tool_call,
-        on_state_change=on_state_change,
-    )
+    # Sticky across reconnects: server closes the receive stream after each
+    # turn on newer models (e.g. gemini-3.1-flash-live-preview). We reopen
+    # transparently with this handle so the conversation keeps full context.
+    resumption_handle: str | None = None
+    session_sent_initial_frame = False
+    ui.speaker_started()
 
     try:
-        async with session:
-            # Initial visual context: one camera frame per session open.
-            try:
-                jpeg = services.camera.capture_jpeg()
-                await session.send_image(jpeg)
-                ui.camera_frame_sent(len(jpeg), source="session open")
-                if len(jpeg) < 8000:
+        while not shutdown.is_set():
+            session = GeminiLiveSession(
+                api_key=cfg.google_api_key,
+                model=cfg.gemini_model,
+                system_instruction=_build_system_instruction(cfg, services.memory),
+                tools=TOOLS,
+                on_audio_out=play_audio,
+                on_tool_call=on_tool_call,
+                on_state_change=on_state_change,
+                resumption_handle=resumption_handle,
+            )
+            server_closed_stream = False
+
+            async with session:
+                # Send a fresh camera frame on the FIRST socket of this wake.
+                # Subsequent reconnects don't re-send — context is resumed.
+                if not session_sent_initial_frame:
+                    try:
+                        jpeg = services.camera.capture_jpeg()
+                        await session.send_image(jpeg)
+                        ui.camera_frame_sent(len(jpeg), source="session open")
+                        if len(jpeg) < 8000:
+                            ui.info(
+                                f"⚠  initial frame only {len(jpeg)} bytes — "
+                                "camera may be dark/uninitialised; ask "
+                                "\"what do you see?\" for a fresh frame"
+                            )
+                        session_sent_initial_frame = True
+                    except Exception:
+                        logger.exception("Initial camera frame failed; continuing")
+                else:
                     ui.info(
-                        f"⚠  initial frame only {len(jpeg)} bytes — camera "
-                        "may be dark/uninitialised; ask \"what do you see?\" "
-                        "for a fresh frame"
+                        f"[dim]↻ reconnected with resumption handle "
+                        f"{(resumption_handle or '')[:12]}…[/]"
                     )
-            except Exception:
-                logger.exception("Initial camera frame failed; continuing")
 
-            mic = MicStream(session.send_audio_chunk, device=cfg.input_device)
-            mic.start()
-            mic_ref[0] = mic
-            ui.mic_started()
-            ui.speaker_started()
-            ui.state_listening()
+                mic = MicStream(
+                    session.send_audio_chunk,
+                    device=cfg.input_device,
+                    on_mute_flush=session.send_audio_stream_end,
+                )
+                mic.start()
+                mic_ref[0] = mic
+                if not session_sent_initial_frame:
+                    # first-ever mic announcement
+                    ui.mic_started()
+                ui.state_listening()
 
-            try:
-                async with asyncio.TaskGroup() as tg:
-                    tg.create_task(mic.pump(), name="mic_pump")
-                    tg.create_task(session.recv_loop(), name="recv_loop")
-                    tg.create_task(
-                        _session_watchdog(cfg, shutdown), name="watchdog"
-                    )
-                    tg.create_task(
-                        _heartbeat(session, shutdown), name="heartbeat"
-                    )
-            except* Exception as group:
-                for exc in group.exceptions:
-                    logger.warning("Session task exited: %r", exc)
+                try:
+                    async with asyncio.TaskGroup() as tg:
+                        tg.create_task(mic.pump(), name="mic_pump")
+                        tg.create_task(session.recv_loop(), name="recv_loop")
+                        tg.create_task(
+                            _session_watchdog(cfg, shutdown), name="watchdog"
+                        )
+                        tg.create_task(
+                            _heartbeat(session, shutdown), name="heartbeat"
+                        )
+                        tg.create_task(
+                            _server_silence_watchdog(session, shutdown),
+                            name="server_silence_watchdog",
+                        )
+                except* RuntimeError as group:
+                    # recv_loop exits with RuntimeError when the server
+                    # closes the stream mid-session — treat as reconnectable.
+                    for exc in group.exceptions:
+                        if "stream closed by server" in str(exc):
+                            server_closed_stream = True
+                        else:
+                            logger.warning("Session task exited: %r", exc)
+                except* Exception as group:
+                    for exc in group.exceptions:
+                        logger.warning("Session task exited: %r", exc)
+
+                # Tear down mic (socket is about to close).
+                pending = unmute_task_ref[0]
+                if pending is not None and not pending.done():
+                    pending.cancel()
+                unmute_task_ref[0] = None
+                m = mic_ref[0]
+                if m is not None:
+                    m.stop()
+                mic_ref[0] = None
+
+            # Decide whether to loop or exit.
+            if not server_closed_stream:
+                break
+            if shutdown.is_set():
+                break
+            # Carry forward the handle for the next socket.
+            resumption_handle = session.last_resumption_handle
+            if resumption_handle is None:
+                ui.error(
+                    "server closed stream but no resumption handle was "
+                    "received — cannot reconnect"
+                )
+                break
     finally:
-        mic = mic_ref[0]
-        if mic is not None:
-            mic.stop()
+        pending = unmute_task_ref[0]
+        if pending is not None and not pending.done():
+            pending.cancel()
+        unmute_task_ref[0] = None
+        m = mic_ref[0]
+        if m is not None:
+            m.stop()
         mic_ref[0] = None
         await speaker.cancel()
         speaker.stop()
@@ -217,6 +306,33 @@ async def _heartbeat(session: GeminiLiveSession, shutdown: asyncio.Event) -> Non
                 audio,
             )
         last_mic, last_audio = mic, audio
+
+
+async def _server_silence_watchdog(
+    session: GeminiLiveSession, shutdown: asyncio.Event
+) -> None:
+    """Fire a loud log line whenever the server has been quiet longer than
+    a threshold. Runs independently of recv_loop so if recv_loop has silently
+    exited, we still see 'server silent' as long as the session is open.
+    """
+    threshold = 5.0
+    last_reported = 0.0
+    while not shutdown.is_set():
+        try:
+            await asyncio.wait_for(shutdown.wait(), timeout=2.0)
+            return
+        except asyncio.TimeoutError:
+            pass
+        gap = session.seconds_since_last_server_message()
+        # Only log once per "new silence episode" when crossing threshold,
+        # then every 5 s after to avoid log spam.
+        if gap >= threshold and (
+            last_reported == 0.0 or gap - last_reported >= 5.0
+        ):
+            ui.recv_wait(gap)
+            last_reported = gap
+        elif gap < threshold:
+            last_reported = 0.0
 
 
 async def _session_watchdog(cfg: Config, shutdown: asyncio.Event) -> None:
