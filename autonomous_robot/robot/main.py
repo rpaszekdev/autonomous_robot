@@ -35,7 +35,14 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--webcam",
         action="store_true",
-        help="Use the real local webcam via OpenCV (Mac/Linux).",
+        default=None,
+        help="Use the real local webcam via OpenCV (default on Mac/Linux).",
+    )
+    parser.add_argument(
+        "--mock-camera",
+        dest="mock_camera",
+        action="store_true",
+        help="Force the mock test-image camera instead of your real webcam.",
     )
     parser.add_argument(
         "--webcam-index",
@@ -96,28 +103,41 @@ async def _async_main(args: argparse.Namespace) -> int:
     cfg = config.load()
     simulate = detect.should_simulate(args.simulate or cfg.simulate_forced)
 
+    # Camera resolution:
+    #  1) --mock-camera → force mock
+    #  2) --camera-url → IP stream
+    #  3) --webcam or auto-detect on simulate Mac/Linux → real webcam
+    #  4) fallback → mock
     webcam_detail = ""
-    use_real_camera = bool(args.webcam or args.camera_url)
-    if args.camera_url:
+    use_real_camera = False
+    if args.mock_camera:
+        pass  # explicit mock
+    elif args.camera_url:
+        use_real_camera = True
         webcam_detail = f"IP stream: {args.camera_url}"
-    elif args.webcam:
-        cams = probe_webcams(max_index=max(args.webcam_index + 1, 4))
-        match = next((c for c in cams if c["index"] == args.webcam_index), None)
-        if match is None:
-            ui.error(
-                f"Webcam index {args.webcam_index} not available. "
-                "Run `python -m robot.main --list-cameras` to see options."
-            )
-            return 1
-        webcam_detail = f"index {match['index']} · {match['width']}x{match['height']}"
+    else:
+        # Auto-enable webcam in simulate mode unless --webcam is explicitly False.
+        want_webcam = args.webcam if args.webcam is not None else simulate
+        if want_webcam:
+            cams = probe_webcams(max_index=max(args.webcam_index + 1, 4))
+            match = next((c for c in cams if c["index"] == args.webcam_index), None)
+            if match is None:
+                ui.error(
+                    f"Webcam index {args.webcam_index} not available. "
+                    "Run `python -m robot.main --list-cameras` to see options, "
+                    "or pass --mock-camera to use the test image."
+                )
+                return 1
+            use_real_camera = True
+            webcam_detail = f"index {match['index']} · {match['width']}x{match['height']}"
     ui.startup(model=cfg.gemini_model, simulate=simulate,
                webcam=use_real_camera, webcam_detail=webcam_detail)
     if not use_real_camera:
         ui.console.print(
             "  [yellow]⚠  Using MOCK CAMERA — Gemini will see a blue test image, "
             "not your real world.[/]\n"
-            "  [dim]Add --webcam (local) or --camera-url rtsp://... "
-            "(IP cam) to use real video.[/]"
+            "  [dim]Drop --mock-camera (or add --webcam / --camera-url) "
+            "for real video.[/]"
         )
 
     loop = asyncio.get_running_loop()
@@ -136,9 +156,9 @@ async def _async_main(args: argparse.Namespace) -> int:
     # Wire services
     memory = MemoryStore(cfg.memory_path)
     if simulate:
-        if args.camera_url:
+        if use_real_camera and args.camera_url:
             camera = OpenCVCamera(source=args.camera_url)
-        elif args.webcam:
+        elif use_real_camera:
             camera = OpenCVCamera(source=args.webcam_index)
         else:
             camera = MockCamera()
