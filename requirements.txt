@@ -1,0 +1,24 @@
+# ── Conversational Robot Dependencies ──
+# Perception
+pyaudio>=0.2.14
+openwakeword>=0.6.0
+numpy>=1.26
+picamera2>=0.3.17
+Pillow>=10.0
+
+# LLM client
+requests>=2.31
+sseclient-py>=1.8
+
+# TTS
+piper-tts>=1.2.0
+
+# GPIO (motor control for wheels)
+gpiozero>=2.0
+RPi.GPIO>=0.7.1
+
+# VAD
+webrtcvad>=2.0.10
+
+# Utilities
+soundfile>=0.12

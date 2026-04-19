@@ -1,0 +1,16 @@
+[Unit]
+Description=Conversational Robot Stack
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/robot
+ExecStartPre=/home/pi/robot/scripts/start_llama_server.sh
+ExecStart=/home/pi/robot/.venv/bin/python /home/pi/robot/openclaw/main.py
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

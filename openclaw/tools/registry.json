@@ -1,0 +1,148 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "speak",
+      "description": "Speak text aloud through the robot's speakers using Piper TTS. Use for any verbal response.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "The text to speak aloud."
+          },
+          "speed": {
+            "type": "number",
+            "description": "Speech speed multiplier. Default 1.0.",
+            "default": 1.0
+          }
+        },
+        "required": ["text"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "describe_scene",
+      "description": "Take a fresh camera snapshot and describe what the robot sees. Use when asked about surroundings or visual questions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "focus": {
+            "type": "string",
+            "description": "Optional focus area or object to pay attention to in the scene."
+          }
+        },
+        "required": []
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "remember",
+      "description": "Store a fact in persistent memory. The robot will recall this in future conversations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "A short label for the memory (e.g. 'user_name', 'favorite_color')."
+          },
+          "value": {
+            "type": "string",
+            "description": "The value to remember."
+          }
+        },
+        "required": ["key", "value"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_time",
+      "description": "Get the current date and time. Use when asked about time or date.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "set_reminder",
+      "description": "Set a timed reminder. The robot will speak the message after the specified delay.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "description": "The reminder message to speak."
+          },
+          "delay_seconds": {
+            "type": "integer",
+            "description": "How many seconds from now to trigger the reminder."
+          }
+        },
+        "required": ["message", "delay_seconds"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "gpio_signal",
+      "description": "Control GPIO pins for physical actions: LEDs, motors (wheels), servos, or relays.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pin": {
+            "type": "integer",
+            "description": "BCM GPIO pin number."
+          },
+          "state": {
+            "type": "boolean",
+            "description": "True = HIGH, False = LOW."
+          },
+          "duration_ms": {
+            "type": "integer",
+            "description": "Optional: auto-reset pin after this many milliseconds."
+          }
+        },
+        "required": ["pin", "state"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "move",
+      "description": "Move the robot forward or backward using the wheel motors.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "direction": {
+            "type": "string",
+            "enum": ["forward", "backward", "left", "right", "stop"],
+            "description": "Direction to move."
+          },
+          "speed": {
+            "type": "number",
+            "description": "Speed from 0.0 to 1.0. Default 0.5.",
+            "default": 0.5
+          },
+          "duration_ms": {
+            "type": "integer",
+            "description": "How long to move in milliseconds. Default 1000.",
+            "default": 1000
+          }
+        },
+        "required": ["direction"]
+      }
+    }
+  }
+]
