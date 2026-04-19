@@ -1,0 +1,7 @@
+# Install on Raspberry Pi 5 in addition to requirements.txt:
+#   pip install -r requirements.txt -r requirements-pi.txt
+# These packages do not install on macOS.
+
+picamera2>=0.3.17
+gpiozero>=2.0
+RPi.GPIO>=0.7.1
