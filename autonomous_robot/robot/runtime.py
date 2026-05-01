@@ -25,6 +25,8 @@ from robot.live.session import GeminiLiveSession
 from robot.live.tools_schema import ALL as TOOLS
 from robot.perception.camera import Camera
 from robot.perception.wake import Wake
+from robot.perception.face_id import FaceIdentifier
+from robot.tools.enroll_face import EnrollFaceService
 from robot.tools.gpio_signal import GpioService
 from robot.tools.memory import MemoryStore
 from robot.tools.motion import MotionService
@@ -48,6 +50,7 @@ class Services:
     motion: MotionService
     gpio: GpioService
     memory: MemoryStore
+    face_id: FaceIdentifier
 
 
 async def run(cfg: Config, services: Services, shutdown: asyncio.Event) -> None:
@@ -107,6 +110,7 @@ async def _run_one_session(
         await session.send_image(jpeg)
 
     vision_service = VisionService(services.camera, send_image_to_session)
+    enroll_face_service = EnrollFaceService(services.camera, services.face_id)
 
     dispatcher = ToolDispatcher(
         {
@@ -117,6 +121,7 @@ async def _run_one_session(
             "set_reminder": reminder_service.schedule,
             "gpio_signal": services.gpio.handle,
             "move": services.motion.handle,
+            "enroll_face": enroll_face_service.handle,
         }
     )
 
@@ -166,10 +171,19 @@ async def _run_one_session(
     try:
         while not shutdown.is_set():
             socket_count += 1
+
+            # Identify the person in frame before opening the session so we can
+            # tailor the system instruction and load their memory profile.
+            # This is a local-only operation — nothing is sent to Gemini.
+            person_id, person_name = _identify_person(services)
+            services.memory.set_active_person(person_id)
+
             session = GeminiLiveSession(
                 api_key=cfg.google_api_key,
                 model=cfg.gemini_model,
-                system_instruction=_build_system_instruction(cfg, services.memory),
+                system_instruction=_build_system_instruction(
+                    cfg, services.memory, person_id, person_name
+                ),
                 tools=TOOLS,
                 on_audio_out=play_audio,
                 on_tool_call=on_tool_call,
@@ -334,9 +348,31 @@ class _WatchdogStop(Exception):
     """Internal signal to unwind the TaskGroup cleanly."""
 
 
-def _build_system_instruction(cfg: Config, memory: MemoryStore) -> str:
+def _identify_person(services: Services) -> tuple[str | None, str | None]:
+    """Capture one frame locally and run face recognition.  No data sent to Gemini."""
+    try:
+        jpeg = services.camera.capture_jpeg()
+        person_id = services.face_id.identify(jpeg)
+        if person_id:
+            person_name = services.face_id.get_name(person_id)
+            ui.info(f"[dim]👤 Recognised: {person_name}[/]")
+            return person_id, person_name
+        ui.info("[dim]👤 Face not recognised — loading global memory only[/]")
+    except Exception:
+        logger.exception("Face identification failed; proceeding as unknown")
+    return None, None
+
+
+def _build_system_instruction(
+    cfg: Config,
+    memory: MemoryStore,
+    person_id: str | None = None,
+    person_name: str | None = None,
+) -> str:
     preamble = cfg.system_prompt
-    mem = memory.snapshot()
+    if person_name:
+        preamble += f"\n\nCurrent user: {person_name} (identified by face recognition)."
+    mem = memory.snapshot(person_id=person_id)
     if mem:
         lines = [f"- {k}: {v}" for k, v in mem.items()]
         preamble += "\n\nPersistent memory:\n" + "\n".join(lines)

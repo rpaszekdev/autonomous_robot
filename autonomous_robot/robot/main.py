@@ -18,6 +18,7 @@ from robot.hardware import detect
 from robot.hardware.gpio import MockGpio, rpi_gpio
 from robot.hardware.motors import MockMotors, gpio_motors
 from robot.perception.camera import MockCamera, OpenCVCamera, pi_camera, probe_webcams
+from robot.perception.face_id import FaceIdentifier
 from robot.perception.wake import KeyboardWake, OpenWakeWordWake
 from robot.runtime import Services, run
 from robot.tools.gpio_signal import GpioService
@@ -155,6 +156,7 @@ async def _async_main(args: argparse.Namespace) -> int:
 
     # Wire services
     memory = MemoryStore(cfg.memory_path)
+    face_id = FaceIdentifier(cfg.memory_path.parent / "faces")
     if simulate:
         if use_real_camera and args.camera_url:
             camera = OpenCVCamera(source=args.camera_url)
@@ -181,6 +183,7 @@ async def _async_main(args: argparse.Namespace) -> int:
         motion=MotionService(motors),
         gpio=GpioService(gpio),
         memory=memory,
+        face_id=face_id,
     )
 
     try:

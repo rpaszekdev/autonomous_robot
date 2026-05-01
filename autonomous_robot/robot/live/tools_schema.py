@@ -118,6 +118,26 @@ MOVE = types.FunctionDeclaration(
     ),
 )
 
+ENROLL_FACE = types.FunctionDeclaration(
+    name="enroll_face",
+    description=(
+        "Learn the current user's face so the robot can recognise them in future sessions. "
+        "Call this when the user says something like 'remember my face', 'learn who I am', "
+        "or gives their name and wants to be remembered. Requires the user to be visible "
+        "to the camera."
+    ),
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "name": types.Schema(
+                type=types.Type.STRING,
+                description="The person's name or preferred name (e.g. 'David').",
+            ),
+        },
+        required=["name"],
+    ),
+)
+
 ALL: list[types.FunctionDeclaration] = [
     SPEAK,
     DESCRIBE_SCENE,
@@ -126,4 +146,5 @@ ALL: list[types.FunctionDeclaration] = [
     SET_REMINDER,
     GPIO_SIGNAL,
     MOVE,
+    ENROLL_FACE,
 ]
