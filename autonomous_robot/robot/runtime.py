@@ -3,7 +3,6 @@
 Holds together the lifecycle of one conversational turn:
 
   wake fires  →  open session
-              →  send initial camera frame
               →  stream mic PCM
               →  play received audio
               →  handle tool calls
@@ -179,31 +178,10 @@ async def _run_one_session(
             server_closed_stream = False
 
             async with session:
-                # Every fresh socket = fresh context for Gemini. Always
-                # send a current camera frame so it isn't hallucinating
-                # about the environment.
                 if socket_count > 1:
                     ui.info(
                         f"[dim]↻ reconnected (socket #{socket_count}) — "
                         "short-term context reset, persistent memory kept[/]"
-                    )
-                try:
-                    jpeg = services.camera.capture_jpeg()
-                    await session.send_image(jpeg)
-                    ui.camera_frame_sent(
-                        len(jpeg),
-                        source=f"socket #{socket_count} open",
-                    )
-                    if len(jpeg) < 8000:
-                        ui.info(
-                            f"⚠  initial frame only {len(jpeg)} bytes — "
-                            "camera may be dark/uninitialised; ask "
-                            "\"what do you see?\" for a fresh frame"
-                        )
-                except Exception:
-                    logger.exception(
-                        "Camera frame failed on socket #%d; continuing",
-                        socket_count,
                     )
 
                 mic = MicStream(
