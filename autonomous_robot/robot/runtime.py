@@ -28,6 +28,7 @@ from robot.perception.wake import Wake
 from robot.perception.face_id import FaceIdentifier
 from robot.tools.enroll_face import EnrollFaceService
 from robot.tools.gpio_signal import GpioService
+from robot.hardware.leds import LedController
 from robot.tools.memory import MemoryStore
 from robot.tools.motion import MotionService
 from robot.tools.reminder import ReminderService
@@ -51,6 +52,7 @@ class Services:
     gpio: GpioService
     memory: MemoryStore
     face_id: FaceIdentifier
+    leds: LedController
 
 
 async def run(cfg: Config, services: Services, shutdown: asyncio.Event) -> None:
@@ -58,6 +60,7 @@ async def run(cfg: Config, services: Services, shutdown: asyncio.Event) -> None:
     session_count = 0
 
     while not shutdown.is_set():
+        services.leds.set_state("idle")
         ui.wake_prompt()
         wake_task = asyncio.create_task(services.wake.wait())
         shutdown_task = asyncio.create_task(shutdown.wait())
@@ -150,6 +153,7 @@ async def _run_one_session(
             pending.cancel()
             unmute_task_ref[0] = None
 
+        services.leds.set_state(new_state)
         should_mute = new_state == "gemini_speaking" or new_state.startswith("tool:")
         if should_mute:
             mic.set_muted(True)
