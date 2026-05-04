@@ -135,8 +135,13 @@ async def _run_one_session(
     unmute_task_ref: list[asyncio.Task | None] = [None]
     loop = asyncio.get_running_loop()
 
-    # Check if we should use network mic
+    # Check if we should use network mic — create ONCE, reuse across sessions
     use_network_mic = network_audio_port is not None
+    net_mic = None
+    if use_network_mic:
+        from robot.live.network_mic import NetworkMicStream
+        net_mic = NetworkMicStream(port=network_audio_port)
+        net_mic.start()
 
     async def _delayed_unmute(mic, state: str) -> None:
         try:
@@ -209,19 +214,18 @@ async def _run_one_session(
                     )
 
                 if use_network_mic:
-                    from robot.live.network_mic import NetworkMicStream
-                    mic = NetworkMicStream(
+                    net_mic.prepare_session(
                         session.send_audio_chunk,
-                        port=network_audio_port,
                         on_mute_flush=session.send_audio_stream_end,
                     )
+                    mic = net_mic
                 else:
                     mic = MicStream(
                         session.send_audio_chunk,
                         device=cfg.input_device,
                         on_mute_flush=session.send_audio_stream_end,
                     )
-                mic.start()
+                    mic.start()
                 mic_ref[0] = mic
                 if not mic_announced:
                     ui.mic_started()
@@ -254,13 +258,15 @@ async def _run_one_session(
                     for exc in group.exceptions:
                         logger.warning("Session task exited: %r", exc)
 
-                # Tear down mic (socket is about to close).
+                # Tear down mic between sessions.
+                # For network mic: DON'T stop — TCP stays alive.
+                # For local mic: stop sounddevice stream.
                 pending = unmute_task_ref[0]
                 if pending is not None and not pending.done():
                     pending.cancel()
                 unmute_task_ref[0] = None
                 m = mic_ref[0]
-                if m is not None:
+                if m is not None and not use_network_mic:
                     m.stop()
                 mic_ref[0] = None
 
@@ -276,9 +282,11 @@ async def _run_one_session(
             pending.cancel()
         unmute_task_ref[0] = None
         m = mic_ref[0]
-        if m is not None:
+        if m is not None and not use_network_mic:
             m.stop()
         mic_ref[0] = None
+        if net_mic is not None:
+            net_mic.stop()
         await speaker.cancel()
         speaker.stop()
         reminder_service.cancel_all()
