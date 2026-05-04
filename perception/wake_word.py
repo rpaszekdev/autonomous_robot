@@ -18,10 +18,20 @@ THRESHOLD = 0.7
 WAKE_WORD = "hey_jarvis"   # closest built-in model; swap for custom .onnx
 
 
+CHUNK_BYTES = CHUNK_SIZE * 2  # 16-bit = 2 bytes per sample
+
+
 class WakeWordDetector:
-    def __init__(self, model_path: str | None = None, on_wake=None):
+    def __init__(self, model_path: str | None = None, on_wake=None,
+                 network_stream=None):
+        """
+        Args:
+            network_stream: Optional NetworkAudioStream instance.
+                            If provided, reads audio from TCP instead of local mic.
+        """
         self.on_wake = on_wake
         self._running = False
+        self._net = network_stream
 
         # Load openWakeWord model
         kwargs = {}
@@ -31,19 +41,25 @@ class WakeWordDetector:
         logger.info("Wake word model loaded (threshold=%.2f)", THRESHOLD)
 
     def _audio_loop(self):
-        pa = pyaudio.PyAudio()
-        stream = pa.open(
-            format=pyaudio.paInt16,
-            channels=1,
-            rate=SAMPLE_RATE,
-            input=True,
-            frames_per_buffer=CHUNK_SIZE,
-        )
+        pa = None
+        stream = None
+        if not self._net:
+            pa = pyaudio.PyAudio()
+            stream = pa.open(
+                format=pyaudio.paInt16,
+                channels=1,
+                rate=SAMPLE_RATE,
+                input=True,
+                frames_per_buffer=CHUNK_SIZE,
+            )
         logger.info("Wake word listener active")
 
         try:
             while self._running:
-                pcm = stream.read(CHUNK_SIZE, exception_on_overflow=False)
+                if self._net:
+                    pcm = self._net.read(CHUNK_BYTES)
+                else:
+                    pcm = stream.read(CHUNK_SIZE, exception_on_overflow=False)
                 audio = np.frombuffer(pcm, dtype=np.int16)
                 prediction = self.model.predict(audio)
 
@@ -55,9 +71,10 @@ class WakeWordDetector:
                             self.on_wake()
                         break
         finally:
-            stream.stop_stream()
-            stream.close()
-            pa.terminate()
+            if pa:
+                stream.stop_stream()
+                stream.close()
+                pa.terminate()
 
     def start(self):
         self._running = True

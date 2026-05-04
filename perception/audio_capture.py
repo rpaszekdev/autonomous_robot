@@ -19,24 +19,42 @@ SILENCE_TIMEOUT_MS = 1200     # stop after 1.2s of silence
 VAD_AGGRESSIVENESS = 2        # 0-3, higher = more aggressive filtering
 
 
+FRAME_BYTES = FRAME_SIZE * 2  # 16-bit = 2 bytes per sample
+
+
 class AudioCapture:
-    def __init__(self):
+    def __init__(self, network_stream=None):
+        """
+        Args:
+            network_stream: Optional NetworkAudioStream instance.
+                            If provided, reads audio from TCP instead of local mic.
+        """
         self.vad = webrtcvad.Vad(VAD_AGGRESSIVENESS)
+        self._net = network_stream
+
+    def _read_frame(self, stream):
+        """Read one VAD frame from either PyAudio or network stream."""
+        if self._net:
+            return self._net.read(FRAME_BYTES)
+        return stream.read(FRAME_SIZE, exception_on_overflow=False)
 
     def record_until_silence(self) -> bytes:
-        """Record from microphone until the user stops speaking.
+        """Record from microphone (or network) until the user stops speaking.
 
         Returns:
             Raw 16kHz mono 16-bit PCM bytes.
         """
-        pa = pyaudio.PyAudio()
-        stream = pa.open(
-            format=pyaudio.paInt16,
-            channels=1,
-            rate=SAMPLE_RATE,
-            input=True,
-            frames_per_buffer=FRAME_SIZE,
-        )
+        pa = None
+        stream = None
+        if not self._net:
+            pa = pyaudio.PyAudio()
+            stream = pa.open(
+                format=pyaudio.paInt16,
+                channels=1,
+                rate=SAMPLE_RATE,
+                input=True,
+                frames_per_buffer=FRAME_SIZE,
+            )
 
         frames: list[bytes] = []
         num_silence_frames = 0
@@ -50,7 +68,7 @@ class AudioCapture:
         logger.info("Recording...")
         try:
             for _ in range(max_frames):
-                pcm = stream.read(FRAME_SIZE, exception_on_overflow=False)
+                pcm = self._read_frame(stream)
                 is_speech = self.vad.is_speech(pcm, SAMPLE_RATE)
 
                 if not speech_started:
@@ -68,9 +86,10 @@ class AudioCapture:
                     else:
                         num_silence_frames = 0
         finally:
-            stream.stop_stream()
-            stream.close()
-            pa.terminate()
+            if pa:
+                stream.stop_stream()
+                stream.close()
+                pa.terminate()
 
         logger.info("Recorded %d frames (%.1fs)", len(frames),
                      len(frames) * FRAME_DURATION_MS / 1000)

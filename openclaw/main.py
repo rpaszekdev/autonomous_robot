@@ -11,6 +11,7 @@ import os
 import signal
 import logging
 import time
+import argparse
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -18,6 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from perception.wake_word import WakeWordDetector
 from perception.audio_capture import AudioCapture
 from perception.camera import Camera
+from perception.network_audio import NetworkAudioStream
 from openclaw.event_loop import EventLoop
 from openclaw.prompt_builder import PromptBuilder
 from openclaw.tool_parser import ToolParser
@@ -56,13 +58,25 @@ def wait_for_llama(url: str, timeout: int = 60):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--network-audio", type=int, nargs="?", const=9999,
+                        metavar="PORT",
+                        help="Receive mic audio over TCP (default port 9999)")
+    args = parser.parse_args()
+
     logger.info("═══ Conversational Robot starting ═══")
 
     # Check llama.cpp server
     wait_for_llama(LLAMA_URL)
 
+    # Optionally set up network audio (mic streamed from Mac)
+    net_stream = None
+    if args.network_audio:
+        net_stream = NetworkAudioStream(port=args.network_audio)
+        net_stream.wait_for_connection()
+
     # Initialise subsystems
-    audio_capture = AudioCapture()
+    audio_capture = AudioCapture(network_stream=net_stream)
     camera = Camera()
     tts = PiperTTS(
         piper_binary=os.path.join(ROBOT_DIR, "piper", "piper"),
@@ -86,7 +100,8 @@ def main():
     )
 
     # Wire up wake word → event loop
-    wake = WakeWordDetector(on_wake=event_loop.on_wake_word)
+    wake = WakeWordDetector(on_wake=event_loop.on_wake_word,
+                            network_stream=net_stream)
     wake.start()
 
     logger.info("═══ Robot ready — listening for wake word ═══")
