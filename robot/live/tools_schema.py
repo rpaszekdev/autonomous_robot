@@ -230,6 +230,17 @@ SET_DISPLAY = types.FunctionDeclaration(
                     items=types.Schema(type=types.Type.INTEGER),
                 ),
             ),
+            "tictactoe": types.Schema(
+                type=types.Type.STRING,
+                description=(
+                    "Render a tic-tac-toe board on the display. Pass 9 characters: "
+                    "X, O, or _ (empty). Positions are left-to-right, top-to-bottom. "
+                    "Example: 'X_O_X____' means X in top-left and center, O in top-right. "
+                    "The board is drawn with grid lines and X/O markers. "
+                    "Returns game status: in_progress, X_wins, O_wins, or draw. "
+                    "You are O, the human is X. Update the board after each move."
+                ),
+            ),
             "text": types.Schema(
                 type=types.Type.STRING,
                 description="Show text. Only 1-2 characters fit without scrolling.",

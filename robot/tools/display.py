@@ -199,6 +199,59 @@ BUILTIN_ICONS: dict[str, list[list[int]]] = {
 
 TALK_INTERVAL = 0.2
 
+# Tic-tac-toe board rendering on 8x8 grid.
+# Layout: 3x3 cells (2x2 each), grid lines on rows/cols 2 and 5.
+#
+#  Cell positions:     Grid pixel layout:
+#   0 | 1 | 2          col: 01 2 34 5 67
+#   ---------          row 0:  XX . OO . XX
+#   3 | 4 | 5          row 1:  XX . OO . XX
+#   ---------          row 2:  .. . .. . ..  (grid line)
+#   6 | 7 | 8          row 3:  ...
+#
+# X = diagonal pattern in 2x2 cell
+# O = filled 2x2 cell
+
+_CELL_POSITIONS = [
+    (0, 0), (0, 3), (0, 6),
+    (3, 0), (3, 3), (3, 6),
+    (6, 0), (6, 3), (6, 6),
+]
+
+_X_PATTERN = [[1, 1], [1, 1]]  # filled square — bold, unmistakable
+_O_PATTERN = [[1, 0], [0, 1]]  # diagonal — lighter, clearly different
+
+
+def _render_tictactoe(board: str) -> list[list[int]]:
+    grid = [[0] * 8 for _ in range(8)]
+
+    # Draw grid lines
+    for i in range(8):
+        grid[2][i] = 1
+        grid[5][i] = 1
+        grid[i][2] = 1
+        grid[i][5] = 1
+
+    # Draw X and O in cells
+    for idx, ch in enumerate(board[:9]):
+        if ch not in ("X", "O", "x", "o"):
+            continue
+        row_start, col_start = _CELL_POSITIONS[idx]
+        pattern = _X_PATTERN if ch in ("X", "x") else _O_PATTERN
+        for dr in range(2):
+            for dc in range(2):
+                grid[row_start + dr][col_start + dc] = pattern[dr][dc]
+
+    return grid
+
+
+# Win line overlays — which cells to highlight for each winning line
+_WIN_LINES = [
+    (0, 1, 2), (3, 4, 5), (6, 7, 8),  # rows
+    (0, 3, 6), (1, 4, 7), (2, 5, 8),  # cols
+    (0, 4, 8), (2, 4, 6),              # diagonals
+]
+
 
 class MatrixDevice(Protocol):
     def draw_grid(self, pixels: list[list[int]]) -> None: ...
@@ -214,6 +267,7 @@ class DisplayToolService:
         self._talk_task: asyncio.Task | None = None
         self._current_face: str | None = None
         self._current_custom: list[list[int]] | None = None
+        self._pinned = False  # True = display is locked (tictactoe, icon, pixels, text)
 
     def _cancel_animation(self) -> None:
         if self._animation_task is not None and not self._animation_task.done():
@@ -226,6 +280,8 @@ class DisplayToolService:
             self._talk_task = None
 
     def start_talking(self) -> None:
+        if self._pinned:
+            return  # tictactoe/icon/pixels on screen — don't override
         self._cancel_talk()
         self._cancel_animation()
         face_name = self._current_face or "neutral"
@@ -251,6 +307,8 @@ class DisplayToolService:
 
     def stop_talking(self) -> None:
         self._cancel_talk()
+        if self._pinned:
+            return  # keep pinned content (tictactoe, icon, etc.)
         if self._current_face and self._current_face in FACES:
             self._matrix.draw_grid(FACES[self._current_face]["closed"])
         elif self._current_custom:
@@ -286,6 +344,7 @@ class DisplayToolService:
         if clear:
             self._current_face = None
             self._current_custom = None
+            self._pinned = False
             self._matrix.clear()
             return {"ok": True, "action": "cleared"}
 
@@ -296,6 +355,7 @@ class DisplayToolService:
                 return {"error": f"Unknown face '{face}'. Available: {available}"}
             self._current_face = face
             self._current_custom = None
+            self._pinned = False  # faces animate when speaking
             self._matrix.draw_grid(face_data["closed"])
             return {"ok": True, "action": "face", "face": face}
 
@@ -306,6 +366,7 @@ class DisplayToolService:
                 return {"error": f"Unknown icon '{icon}'. Available: {available}"}
             self._current_face = None
             self._current_custom = grid
+            self._pinned = True  # stay on screen
             self._matrix.draw_grid(grid)
             return {"ok": True, "action": "icon", "icon": icon}
 
@@ -315,20 +376,73 @@ class DisplayToolService:
             grid = _normalize_grid(pixels)
             self._current_face = None
             self._current_custom = grid
+            self._pinned = True  # stay on screen
             self._matrix.draw_grid(grid)
             return {"ok": True, "action": "pixels"}
 
         if text is not None:
             self._current_face = None
             self._current_custom = None
+            self._pinned = True  # stay on screen
             self._matrix.draw_text(str(text), scroll=bool(scroll))
             action = "scroll_text" if scroll else "static_text"
             return {"ok": True, "action": action, "text": str(text)}
 
+        tictactoe = args.get("tictactoe")
+        if tictactoe is not None:
+            return self._handle_tictactoe(tictactoe)
+
         if animation is not None:
             return await self._run_animation(animation)
 
-        return {"error": "Provide one of: face, icon, pixels, text, animation, or clear."}
+        return {"error": "Provide one of: face, icon, pixels, text, tictactoe, animation, or clear."}
+
+    def _handle_tictactoe(self, board: str) -> dict:
+        board = str(board).replace(" ", "").replace(",", "").replace("|", "")
+        if len(board) != 9:
+            return {
+                "error": "tictactoe must be 9 characters: X, O, or _ for empty. "
+                "Example: 'X_O__X__O' (positions 1-9, left-to-right, top-to-bottom)"
+            }
+        for ch in board:
+            if ch not in ("X", "O", "x", "o", "_", "-", "."):
+                return {"error": f"Invalid character '{ch}'. Use X, O, or _ for empty."}
+
+        grid = _render_tictactoe(board)
+        self._current_face = None
+        self._current_custom = grid
+        self._pinned = True  # board stays on screen, don't override with face
+        self._matrix.draw_grid(grid)
+
+        x_count = board.upper().count("X")
+        o_count = board.upper().count("O")
+        empty = board.count("_") + board.count("-") + board.count(".")
+
+        winner = None
+        for a, b, c in _WIN_LINES:
+            line = board[a].upper() + board[b].upper() + board[c].upper()
+            if line == "XXX":
+                winner = "X"
+                break
+            elif line == "OOO":
+                winner = "O"
+                break
+
+        status = "in_progress"
+        if winner:
+            status = f"{winner}_wins"
+        elif empty == 0:
+            status = "draw"
+
+        return {
+            "ok": True,
+            "action": "tictactoe",
+            "board": board.upper(),
+            "x_moves": x_count,
+            "o_moves": o_count,
+            "empty": empty,
+            "status": status,
+        }
 
     async def _run_animation(self, frames: list) -> dict:
         if not isinstance(frames, list) or len(frames) == 0:
