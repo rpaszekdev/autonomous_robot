@@ -199,57 +199,57 @@ BUILTIN_ICONS: dict[str, list[list[int]]] = {
 
 TALK_INTERVAL = 0.2
 
-# Tic-tac-toe board rendering on 8x8 grid.
-# Layout: 3x3 cells (2x2 each), grid lines on rows/cols 2 and 5.
+# Tic-tac-toe on 8x8 grid.
+# No grid lines — cells are separated by empty gaps.
+# Each cell is 2x2 pixels. Gap columns: 2, 5. Gap rows: 2, 5.
 #
-#  Cell positions:     Grid pixel layout:
-#   0 | 1 | 2          col: 01 2 34 5 67
-#   ---------          row 0:  XX . OO . XX
-#   3 | 4 | 5          row 1:  XX . OO . XX
-#   ---------          row 2:  .. . .. . ..  (grid line)
-#   6 | 7 | 8          row 3:  ...
+# X = filled 2x2 block  ██
+#                        ██
 #
-# X = diagonal pattern in 2x2 cell
-# O = filled 2x2 cell
+# O = ring/dot pattern   ██
+#                        ·· (only top row lit — dash shape)
+#
+# Actually, to make them VERY distinct:
+# X = both diagonals (cross shape across the 2x2)
+# O = top+bottom rows only (horizontal lines)
+#
+# Simplest approach that works: X = ALL 4 pixels on, O = only 2 pixels on
+# X: ██    O: ·█
+#    ██       █·
 
-_CELL_POSITIONS = [
+_CELL_ORIGINS = [
     (0, 0), (0, 3), (0, 6),
     (3, 0), (3, 3), (3, 6),
     (6, 0), (6, 3), (6, 6),
 ]
 
-_X_PATTERN = [[1, 1], [1, 1]]  # filled square — bold, unmistakable
-_O_PATTERN = [[1, 0], [0, 1]]  # diagonal — lighter, clearly different
-
 
 def _render_tictactoe(board: str) -> list[list[int]]:
     grid = [[0] * 8 for _ in range(8)]
 
-    # Draw grid lines
-    for i in range(8):
-        grid[2][i] = 1
-        grid[5][i] = 1
-        grid[i][2] = 1
-        grid[i][5] = 1
-
-    # Draw X and O in cells
     for idx, ch in enumerate(board[:9]):
-        if ch not in ("X", "O", "x", "o"):
+        upper = ch.upper()
+        if upper not in ("X", "O"):
             continue
-        row_start, col_start = _CELL_POSITIONS[idx]
-        pattern = _X_PATTERN if ch in ("X", "x") else _O_PATTERN
-        for dr in range(2):
-            for dc in range(2):
-                grid[row_start + dr][col_start + dc] = pattern[dr][dc]
+        r, c = _CELL_ORIGINS[idx]
+        if upper == "X":
+            # filled 2x2 block — very bright
+            grid[r][c] = 1
+            grid[r][c + 1] = 1
+            grid[r + 1][c] = 1
+            grid[r + 1][c + 1] = 1
+        else:
+            # single center dot — clearly different from X
+            grid[r][c + 1] = 1
+            grid[r + 1][c] = 1
 
     return grid
 
 
-# Win line overlays — which cells to highlight for each winning line
 _WIN_LINES = [
-    (0, 1, 2), (3, 4, 5), (6, 7, 8),  # rows
-    (0, 3, 6), (1, 4, 7), (2, 5, 8),  # cols
-    (0, 4, 8), (2, 4, 6),              # diagonals
+    (0, 1, 2), (3, 4, 5), (6, 7, 8),
+    (0, 3, 6), (1, 4, 7), (2, 5, 8),
+    (0, 4, 8), (2, 4, 6),
 ]
 
 
