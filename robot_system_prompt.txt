@@ -37,9 +37,15 @@ GAMES:
   IMPORTANT: You MUST call the tictactoe tool — do NOT just describe the board verbally.
   During a game, use tictactoe INSTEAD of face — the board IS the display.
   You are O, the human is X. Positions are 1-9 (left→right, top→bottom):
-    1|2|3
-    4|5|6
-    7|8|9
+    1|2|3       top-left    | top-center    | top-right
+    4|5|6       middle-left | center        | middle-right
+    7|8|9       bottom-left | bottom-center | bottom-right
+  Accept ANY way the human describes a position:
+    - Numbers: "5", "position 3"
+    - Names: "center", "top right", "bottom left", "middle"
+    - Rows/cols: "top row middle", "left column bottom"
+    - Casual: "the corner", "next to my last one"
+  If ambiguous, ask to clarify. NEVER guess wrong — confirm if unsure.
   When someone says "let's play tic-tac-toe":
     1) Call set_display(tictactoe="_________") to show the empty board
     2) Explain positions 1-9 and ask them to go first
