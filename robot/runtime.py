@@ -28,6 +28,8 @@ from robot.perception.wake import Wake
 from robot.perception.face_id import FaceIdentifier
 from robot.tools.enroll_face import EnrollFaceService
 from robot.tools.gpio_signal import GpioService
+from robot.tools.leds import LedToolService
+from robot.tools.display import DisplayToolService
 from robot.hardware.leds import LedController
 from robot.tools.memory import MemoryStore
 from robot.tools.motion import MotionService
@@ -53,6 +55,8 @@ class Services:
     memory: MemoryStore
     face_id: FaceIdentifier
     leds: LedController
+    led_tool: LedToolService
+    display: DisplayToolService
 
 
 async def run(cfg: Config, services: Services, shutdown: asyncio.Event,
@@ -128,6 +132,8 @@ async def _run_one_session(
             "gpio_signal": services.gpio.handle,
             "move": services.motion.handle,
             "enroll_face": enroll_face_service.handle,
+            "set_leds": services.led_tool.handle,
+            "set_display": services.display.handle,
         }
     )
 
@@ -165,6 +171,7 @@ async def _run_one_session(
             unmute_task_ref[0] = None
 
         services.leds.set_state(new_state)
+        services.display.on_state_change(new_state)
         should_mute = new_state == "gemini_speaking" or new_state.startswith("tool:")
         if should_mute:
             mic.set_muted(True)

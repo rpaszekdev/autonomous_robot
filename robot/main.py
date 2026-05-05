@@ -24,6 +24,9 @@ from robot.perception.face_id import FaceIdentifier
 from robot.perception.wake import KeyboardWake, OpenWakeWordWake
 from robot.runtime import Services, run
 from robot.tools.gpio_signal import GpioService
+from robot.tools.leds import LedToolService
+from robot.tools.display import DisplayToolService
+from robot.hardware.matrix import MockMatrix, max7219_matrix
 from robot.tools.memory import MemoryStore
 from robot.tools.motion import MotionService
 
@@ -187,6 +190,16 @@ async def _async_main(args: argparse.Namespace) -> int:
         else:
             wake = OpenWakeWordWake(loop, model_path=args.wake_model)
 
+    led_tool = LedToolService(gpio)
+    if simulate:
+        matrix = MockMatrix()
+    else:
+        try:
+            matrix = max7219_matrix()
+        except Exception as exc:
+            ui.info(f"MAX7219 not available ({exc}) — using mock display")
+            matrix = MockMatrix()
+    display_tool = DisplayToolService(matrix)
     services = Services(
         camera=camera,
         wake=wake,
@@ -195,6 +208,8 @@ async def _async_main(args: argparse.Namespace) -> int:
         memory=memory,
         face_id=face_id,
         leds=leds,
+        led_tool=led_tool,
+        display=display_tool,
     )
 
     try:
@@ -202,6 +217,8 @@ async def _async_main(args: argparse.Namespace) -> int:
     finally:
         wake.stop()
         camera.close()
+        display_tool.close()
+        matrix.close()
         gpio.close()
         leds.close()
     return 0
