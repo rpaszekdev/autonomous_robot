@@ -414,28 +414,21 @@ _CELL_ORIGINS = [
 def _render_tictactoe(board: str) -> list[list[int]]:
     grid = [[0] * 8 for _ in range(8)]
 
-    # Draw grid lines (columns 2,5 and rows 2,5)
-    for i in range(8):
-        grid[2][i] = 1
-        grid[5][i] = 1
-        grid[i][2] = 1
-        grid[i][5] = 1
-
+    # No grid lines — the 1px gap between cells is the visual separator.
+    # X = diagonal (2 LEDs), O = solid block (4 LEDs). Clearly distinct.
     for idx, ch in enumerate(board[:9]):
         upper = ch.upper()
         if upper not in ("X", "O"):
             continue
         r, c = _CELL_ORIGINS[idx]
         if upper == "X":
-            # filled 2x2 block
+            grid[r][c] = 1
+            grid[r + 1][c + 1] = 1
+        else:
             grid[r][c] = 1
             grid[r][c + 1] = 1
             grid[r + 1][c] = 1
             grid[r + 1][c + 1] = 1
-        else:
-            # diagonal dots — clearly different from X
-            grid[r][c + 1] = 1
-            grid[r + 1][c] = 1
 
     return grid
 
