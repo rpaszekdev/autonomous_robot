@@ -1,6 +1,10 @@
 """Mac-side mic sender — streams raw 16kHz mono 16-bit PCM over TCP to the Pi.
 Auto-reconnects if the connection drops.
 
+The audio callback only enqueues PCM into a thread-safe queue — a background
+sender thread does the actual socket I/O. This prevents WiFi stalls from
+blocking the real-time audio callback and crashing the stream.
+
 Usage:
     python scripts/mac_mic_sender.py <PI_HOST> [PORT]
 
@@ -11,6 +15,7 @@ import sys
 import socket
 import time
 import threading
+import queue
 import numpy as np
 import sounddevice as sd
 from scipy.signal import resample_poly
@@ -19,15 +24,56 @@ from math import gcd
 TARGET_RATE = 16000
 BLOCK_MS = 100
 DEFAULT_PORT = 9999
+SEND_QUEUE_MAX = 50
 
-# --- logging stats ---
-_send_lock = threading.Lock()
-_send_count = 0
-_send_bytes = 0
-_send_errors = 0
-_send_rms_sum = 0
-_send_rms_peak = 0
-_send_t0 = time.monotonic()
+_lock = threading.Lock()
+_stats = {
+    "sent": 0, "bytes": 0, "queued": 0, "dropped": 0,
+    "rms_sum": 0, "rms_peak": 0, "t0": time.monotonic(),
+}
+
+
+def _reset_stats():
+    _stats["sent"] = 0
+    _stats["bytes"] = 0
+    _stats["queued"] = 0
+    _stats["dropped"] = 0
+    _stats["rms_sum"] = 0
+    _stats["rms_peak"] = 0
+    _stats["t0"] = time.monotonic()
+
+
+def _log_stats(send_q: queue.Queue):
+    now = time.monotonic()
+    with _lock:
+        if now - _stats["t0"] < 5.0:
+            return
+        elapsed = now - _stats["t0"]
+        avg_rms = _stats["rms_sum"] // max(_stats["queued"], 1)
+        print(
+            f"  [stats] queued={_stats['queued']} sent={_stats['sent']} "
+            f"({_stats['sent']/elapsed:.1f}/s) bytes={_stats['bytes']} "
+            f"rms_avg={avg_rms} rms_peak={_stats['rms_peak']} "
+            f"dropped={_stats['dropped']} qsize={send_q.qsize()}"
+        )
+        _reset_stats()
+
+
+def _sender_thread(sock: socket.socket, send_q: queue.Queue, broken: threading.Event):
+    while not broken.is_set():
+        try:
+            pcm = send_q.get(timeout=0.5)
+        except queue.Empty:
+            continue
+        try:
+            sock.sendall(pcm)
+            with _lock:
+                _stats["sent"] += 1
+                _stats["bytes"] += len(pcm)
+            _log_stats(send_q)
+        except (BrokenPipeError, OSError):
+            broken.set()
+            return
 
 
 def main():
@@ -59,47 +105,36 @@ def main():
             continue
 
         broken = threading.Event()
+        send_q = queue.Queue(maxsize=SEND_QUEUE_MAX)
+        _reset_stats()
+
+        sender = threading.Thread(
+            target=_sender_thread, args=(sock, send_q, broken), daemon=True
+        )
+        sender.start()
 
         def callback(indata, frames, time_info, status):
-            global _send_count, _send_bytes, _send_errors, _send_rms_sum, _send_rms_peak, _send_t0
             if broken.is_set():
                 raise sd.CallbackAbort
             if status:
                 print(f"  sounddevice: {status}", file=sys.stderr)
             samples = indata[:, 0].astype(np.float32)
-            # RMS of raw input
             rms = int(np.sqrt(np.mean(samples.astype(np.float64) ** 2)))
             if hw_rate != TARGET_RATE:
                 samples = resample_poly(samples, up, down)
             pcm = samples.astype(np.int16).tobytes()
             try:
-                sock.sendall(pcm)
-                with _send_lock:
-                    _send_count += 1
-                    _send_bytes += len(pcm)
-                    _send_rms_sum += rms
-                    if rms > _send_rms_peak:
-                        _send_rms_peak = rms
-                    now = time.monotonic()
-                    if now - _send_t0 >= 5.0:
-                        elapsed = now - _send_t0
-                        avg_rms = _send_rms_sum // max(_send_count, 1)
-                        print(
-                            f"  [stats] sent={_send_count} ({_send_count/elapsed:.1f}/s) "
-                            f"bytes={_send_bytes} rms_avg={avg_rms} rms_peak={_send_rms_peak} "
-                            f"errors={_send_errors} pcm_len={len(pcm)}"
-                        )
-                        _send_count = 0
-                        _send_bytes = 0
-                        _send_errors = 0
-                        _send_rms_sum = 0
-                        _send_rms_peak = 0
-                        _send_t0 = now
-            except (BrokenPipeError, OSError):
-                with _send_lock:
-                    _send_errors += 1
-                broken.set()
-                raise sd.CallbackAbort
+                send_q.put_nowait(pcm)
+                with _lock:
+                    _stats["queued"] += 1
+                    _stats["rms_sum"] += rms
+                    if rms > _stats["rms_peak"]:
+                        _stats["rms_peak"] = rms
+            except queue.Full:
+                with _lock:
+                    _stats["dropped"] += 1
+                if _stats["dropped"] % 10 == 1:
+                    print(f"  [warn] send queue full, dropped frame (total={_stats['dropped']})")
 
         try:
             with sd.InputStream(samplerate=hw_rate, channels=1, dtype="int16",
@@ -109,9 +144,11 @@ def main():
             time.sleep(1)
         except KeyboardInterrupt:
             print("\nStopped.")
+            broken.set()
             sock.close()
             return
         finally:
+            broken.set()
             sock.close()
 
 

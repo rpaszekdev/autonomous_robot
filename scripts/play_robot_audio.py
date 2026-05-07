@@ -15,7 +15,7 @@ SAMPLE_RATE = 24000
 CHANNELS = 1
 FRAME_SIZE = 2400          # 100ms @ 24kHz
 FRAME_BYTES = FRAME_SIZE * 2  # 16-bit
-PRE_BUFFER_FRAMES = 3     # buffer 300ms before starting playback
+PRE_BUFFER_FRAMES = 8     # buffer 800ms before starting playback to absorb WiFi jitter
 
 
 def stream_once():
