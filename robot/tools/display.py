@@ -512,6 +512,9 @@ class DisplayToolService:
             self._cancel_talk()
             self._cancel_animation()
 
+    def show_tictactoe(self, board: str) -> dict:
+        return self._handle_tictactoe(board)
+
     async def handle(self, args: dict) -> dict:
         self._cancel_animation()
         self._cancel_talk()
@@ -593,7 +596,7 @@ class DisplayToolService:
             self._pinned = True
             return await self._run_animation(animation)
 
-        return {"error": "Provide one of: face, icon, pixels, text, tictactoe, animation, or clear."}
+        return {"error": "Provide one of: face, icon, pixels, text, animation, or clear."}
 
     def _handle_tictactoe(self, board: str) -> dict:
         board = str(board).replace(" ", "").replace(",", "").replace("|", "")

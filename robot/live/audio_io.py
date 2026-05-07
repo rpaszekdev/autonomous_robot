@@ -10,6 +10,7 @@ import array
 import asyncio
 import logging
 import os
+import struct
 from collections import deque
 from typing import Awaitable, Callable
 
@@ -62,7 +63,7 @@ def _resample(data: bytes, in_rate: int, out_rate: int) -> bytes:
     g = gcd(out_rate, in_rate)
     up, down = out_rate // g, in_rate // g
     resampled = resample_poly(samples, up, down)
-    return resampled.astype(np.int16).tobytes()
+    return np.clip(resampled, -32768, 32767).astype(np.int16).tobytes()
 
 
 class MicStream:
@@ -184,7 +185,7 @@ class SpeakerStream:
     def __init__(self, device: str | int | None = None) -> None:
         self._device = device
         self._buffer: deque[bytes] = deque()
-        self._lock = asyncio.Lock()
+        self._lock = threading.Lock()
         self._stream: sd.RawOutputStream | None = None
         self._available = False
         self._clients: list[socket.socket] = []
@@ -200,6 +201,7 @@ class SpeakerStream:
         while True:
             try:
                 conn, addr = srv.accept()
+                conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                 logger.info("[speaker] client connected from %s", addr)
                 self._clients.append(conn)
             except Exception:
@@ -210,15 +212,16 @@ class SpeakerStream:
             logger.debug("speaker status: %s", status)
         needed = frames * 2
         out = bytearray()
-        while len(out) < needed and self._buffer:
-            chunk = self._buffer.popleft()
-            out.extend(chunk)
-        if len(out) < needed:
-            out.extend(b"\x00" * (needed - len(out)))
-        elif len(out) > needed:
-            remainder = bytes(out[needed:])
-            out = out[:needed]
-            self._buffer.appendleft(remainder)
+        with self._lock:
+            while len(out) < needed and self._buffer:
+                chunk = self._buffer.popleft()
+                out.extend(chunk)
+            if len(out) < needed:
+                out.extend(b"\x00" * (needed - len(out)))
+            elif len(out) > needed:
+                remainder = bytes(out[needed:])
+                out = out[:needed]
+                self._buffer.appendleft(remainder)
         outdata[:] = bytes(out)
 
     def start(self) -> None:
@@ -252,11 +255,12 @@ class SpeakerStream:
                 self._fifo.write(pcm)
             except Exception:
                 self._fifo = None
-        # Always stream raw 24kHz PCM to TCP clients (Mac speaker)
+        # Always stream length-prefixed 24kHz PCM to TCP clients (Mac speaker)
         dead = []
+        framed = struct.pack(">I", len(pcm)) + pcm
         for c in self._clients:
             try:
-                c.sendall(pcm)
+                c.sendall(framed)
             except Exception:
                 dead.append(c)
         for c in dead:
@@ -264,11 +268,11 @@ class SpeakerStream:
         if not self._available:
             return
         resampled = _resample(pcm, SPK_RATE, SPK_HW_RATE)
-        async with self._lock:
+        with self._lock:
             self._buffer.append(resampled)
 
     async def cancel(self) -> None:
-        async with self._lock:
+        with self._lock:
             self._buffer.clear()
 
     def stop(self) -> None:

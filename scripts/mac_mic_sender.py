@@ -97,6 +97,7 @@ def main():
         try:
             print(f"Connecting to {host}:{port}...")
             sock.connect((host, port))
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             print("Connected — streaming mic audio")
         except (ConnectionRefusedError, OSError) as e:
             print(f"Can't connect: {e} — retrying in 2s...")
@@ -122,7 +123,7 @@ def main():
             rms = int(np.sqrt(np.mean(samples.astype(np.float64) ** 2)))
             if hw_rate != TARGET_RATE:
                 samples = resample_poly(samples, up, down)
-            pcm = samples.astype(np.int16).tobytes()
+            pcm = np.clip(samples, -32768, 32767).astype(np.int16).tobytes()
             try:
                 send_q.put_nowait(pcm)
                 with _lock:

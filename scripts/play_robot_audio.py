@@ -3,6 +3,7 @@
 Auto-reconnects. Buffers to smooth network jitter.
 """
 import socket
+import struct
 import time
 import threading
 import collections
@@ -13,8 +14,7 @@ PI_HOST = "raspberrypi.local"
 PI_PORT = 9001
 SAMPLE_RATE = 24000
 CHANNELS = 1
-FRAME_SIZE = 2400          # 100ms @ 24kHz
-FRAME_BYTES = FRAME_SIZE * 2  # 16-bit
+FRAME_SIZE = 2400          # 100ms @ 24kHz for sounddevice callback
 PRE_BUFFER_FRAMES = 8     # buffer 800ms before starting playback to absorb WiFi jitter
 
 
@@ -22,6 +22,7 @@ def stream_once():
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.settimeout(10)
     sock.connect((PI_HOST, PI_PORT))
+    sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
     print(f"Connected to {PI_HOST}:{PI_PORT}")
 
     buf = collections.deque()
@@ -63,36 +64,43 @@ def stream_once():
         callback=audio_callback,
     )
 
-    leftover = b""
     pre_buffered = 0
 
-    try:
-        while not done.is_set():
+    def recv_exact(n):
+        """Read exactly n bytes from sock, or raise ConnectionError."""
+        parts = []
+        remaining = n
+        while remaining > 0:
             try:
-                chunk = sock.recv(8192)
+                chunk = sock.recv(remaining)
             except socket.timeout:
                 stats["timeouts"] += 1
                 continue
             if not chunk:
-                print(f"  [recv] EOF from server")
-                break
+                raise ConnectionError("EOF from server")
+            parts.append(chunk)
+            remaining -= len(chunk)
+        return b"".join(parts)
+
+    try:
+        while not done.is_set():
+            # Read 4-byte length header
+            header = recv_exact(4)
+            msg_len = struct.unpack(">I", header)[0]
+            # Read the PCM payload
+            pcm = recv_exact(msg_len)
 
             stats["recv_count"] += 1
-            stats["recv_bytes"] += len(chunk)
-            leftover += chunk
-            # Chop into aligned frames
-            while len(leftover) >= FRAME_BYTES:
-                frame = leftover[:FRAME_BYTES]
-                leftover = leftover[FRAME_BYTES:]
-                with lock:
-                    buf.append(frame)
-                    stats["frames_queued"] += 1
-                if not started.is_set():
-                    pre_buffered += 1
-                    if pre_buffered >= PRE_BUFFER_FRAMES:
-                        print(f"  [playback] pre-buffer filled, starting playback")
-                        stream.start()
-                        started.set()
+            stats["recv_bytes"] += msg_len
+            with lock:
+                buf.append(pcm)
+                stats["frames_queued"] += 1
+            if not started.is_set():
+                pre_buffered += 1
+                if pre_buffered >= PRE_BUFFER_FRAMES:
+                    print(f"  [playback] pre-buffer filled, starting playback")
+                    stream.start()
+                    started.set()
 
             # Log stats every 5 seconds
             now = time.monotonic()
@@ -102,9 +110,8 @@ def stream_once():
                     buflen = len(buf)
                 rms_str = ""
                 if stats["frames_queued"] > 0:
-                    # compute RMS of last received chunk for diagnostics
                     try:
-                        samples = np.frombuffer(chunk, dtype=np.int16)
+                        samples = np.frombuffer(pcm, dtype=np.int16)
                         rms = int(np.sqrt(np.mean(samples.astype(np.float64) ** 2)))
                         rms_str = f" rms={rms}"
                     except Exception:
@@ -114,7 +121,7 @@ def stream_once():
                     f"bytes={stats['recv_bytes']} frames_queued={stats['frames_queued']} "
                     f"buf_depth={buflen} cb_calls={stats['cb_calls']} "
                     f"silence={stats['cb_silence']} timeouts={stats['timeouts']}"
-                    f"{rms_str} leftover={len(leftover)}"
+                    f"{rms_str}"
                 )
                 stats["recv_count"] = 0
                 stats["recv_bytes"] = 0

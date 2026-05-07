@@ -106,6 +106,8 @@ class NetworkMicStream:
                 conn, addr = srv.accept()
             except OSError:
                 break
+            conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            conn.settimeout(10.0)
             self._conn = conn
             logger.info("[net-mic] Client connected from %s", addr)
             ui.info(f"[bold green]Network mic connected from {addr}[/]")
@@ -145,6 +147,9 @@ class NetworkMicStream:
                         recv_bytes = 0
                         partial_reads = 0
                         t0 = now
+            except socket.timeout:
+                logger.warning("[net-mic] Client timed out — waiting for reconnect...")
+                ui.info("[bold yellow]Network mic timed out — waiting for reconnect...[/]")
             except (ConnectionError, OSError) as e:
                 logger.warning("[net-mic] Client disconnected (%s) — waiting for reconnect...", e)
                 ui.info("[bold yellow]Network mic disconnected — waiting for reconnect...[/]")

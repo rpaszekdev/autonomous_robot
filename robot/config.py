@@ -27,6 +27,7 @@ class Config:
     session_idle_seconds: int
     input_device: str | None
     output_device: str | None
+    gemini_voice: str | None
 
 
 def _require(name: str) -> str:
@@ -66,4 +67,5 @@ def load() -> Config:
         session_idle_seconds=_int("SESSION_IDLE_SECONDS", 15),
         input_device=_optional("SD_INPUT_DEVICE") or None,
         output_device=_optional("SD_OUTPUT_DEVICE") or None,
+        gemini_voice=_optional("GEMINI_VOICE") or None,
     )

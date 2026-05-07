@@ -233,17 +233,6 @@ SET_DISPLAY = types.FunctionDeclaration(
                     items=types.Schema(type=types.Type.INTEGER),
                 ),
             ),
-            "tictactoe": types.Schema(
-                type=types.Type.STRING,
-                description=(
-                    "Render a tic-tac-toe board on the display. Pass 9 characters: "
-                    "X, O, or _ (empty). Positions are left-to-right, top-to-bottom. "
-                    "Example: 'X_O_X____' means X in top-left and center, O in top-right. "
-                    "The board is drawn with grid lines and X/O markers. "
-                    "Returns game status: in_progress, X_wins, O_wins, or draw. "
-                    "You are O, the human is X. Update the board after each move."
-                ),
-            ),
             "text": types.Schema(
                 type=types.Type.STRING,
                 description="Show text. Only 1-2 characters fit without scrolling.",
@@ -299,6 +288,34 @@ SET_DISPLAY = types.FunctionDeclaration(
     ),
 )
 
+TTT_START = types.FunctionDeclaration(
+    name="ttt_start",
+    description=(
+        "Start a new tic-tac-toe game. Resets the board and displays it on the 8x8 matrix. "
+        "Human plays X, robot plays O. Call this when someone wants to play tic-tac-toe."
+    ),
+    parameters=types.Schema(type=types.Type.OBJECT, properties={}),
+)
+
+TTT_MOVE = types.FunctionDeclaration(
+    name="ttt_move",
+    description=(
+        "Place the human's X move. The server automatically computes the robot's O response "
+        "using optimal play. Returns the updated board, both moves, and game status. "
+        "Do NOT track the board yourself — the server is authoritative."
+    ),
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "position": types.Schema(
+                type=types.Type.INTEGER,
+                description="Position 1-9 where the human wants to place X. Layout: 1|2|3 / 4|5|6 / 7|8|9.",
+            ),
+        },
+        required=["position"],
+    ),
+)
+
 ALL: list[types.FunctionDeclaration] = [
     SPEAK,
     DESCRIBE_SCENE,
@@ -310,4 +327,6 @@ ALL: list[types.FunctionDeclaration] = [
     ENROLL_FACE,
     SET_LEDS,
     SET_DISPLAY,
+    TTT_START,
+    TTT_MOVE,
 ]

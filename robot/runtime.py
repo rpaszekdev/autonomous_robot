@@ -36,6 +36,7 @@ from robot.tools.motion import MotionService
 from robot.tools.reminder import ReminderService
 from robot.tools.time_tool import handle as handle_time
 from robot.tools.speak import handle as handle_speak
+from robot.tools.tictactoe import TicTacToeEngine
 from robot.tools.vision import VisionService
 
 logger = logging.getLogger(__name__)
@@ -125,6 +126,7 @@ async def _run_one_session(
 
     vision_service = VisionService(services.camera, send_image_to_session)
     enroll_face_service = EnrollFaceService(services.camera, services.face_id)
+    ttt_engine = TicTacToeEngine(services.display)
 
     dispatcher = ToolDispatcher(
         {
@@ -138,6 +140,8 @@ async def _run_one_session(
             "enroll_face": enroll_face_service.handle,
             "set_leds": services.led_tool.handle,
             "set_display": services.display.handle,
+            "ttt_start": ttt_engine.start,
+            "ttt_move": ttt_engine.move,
         }
     )
 
@@ -212,6 +216,7 @@ async def _run_one_session(
                 on_audio_out=play_audio,
                 on_tool_call=on_tool_call,
                 on_state_change=on_state_change,
+                voice_name=cfg.gemini_voice,
             )
             server_closed_stream = False
 

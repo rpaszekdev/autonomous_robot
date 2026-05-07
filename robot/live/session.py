@@ -39,17 +39,22 @@ class GeminiLiveSession:
         on_tool_call: ToolCallHandler,
         on_state_change: "Callable[[str], None] | None" = None,
         resumption_handle: "str | None" = None,
+        voice_name: "str | None" = None,
     ) -> None:
         self._client = genai.Client(api_key=api_key)
         self._model = model
-        # gemini-3.1-flash-live-preview closes the receive stream after
-        # every turn_complete. We reconnect fresh — keeping session
-        # resumption off because the handles the server emits for intentional
-        # turn-close are not accepted for replay (returns 1007
-        # "invalid argument"). Conversation history is re-seeded via the
-        # system_instruction so the model still has persistent user facts.
+        speech_config = None
+        if voice_name:
+            speech_config = types.SpeechConfig(
+                voice_config=types.VoiceConfig(
+                    prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                        voice_name=voice_name,
+                    )
+                )
+            )
         self._config = types.LiveConnectConfig(
             response_modalities=["AUDIO"],
+            speech_config=speech_config,
             system_instruction=types.Content(
                 role="system", parts=[types.Part(text=system_instruction)]
             ),
