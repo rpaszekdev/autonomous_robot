@@ -92,6 +92,7 @@ class NetworkMicStream:
 
     def _tcp_recv_loop(self) -> None:
         """Background thread: accept clients in a loop, auto-reconnect."""
+        import time
         srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         srv.bind(("0.0.0.0", self._port))
@@ -109,18 +110,43 @@ class NetworkMicStream:
             logger.info("[net-mic] Client connected from %s", addr)
             ui.info(f"[bold green]Network mic connected from {addr}[/]")
 
+            recv_count = 0
+            recv_bytes = 0
+            partial_reads = 0
+            t0 = time.monotonic()
             try:
                 while self._running:
                     data = b""
+                    reads_for_chunk = 0
                     while len(data) < CHUNK_BYTES:
                         chunk = conn.recv(CHUNK_BYTES - len(data))
                         if not chunk:
                             raise ConnectionError("EOF")
+                        reads_for_chunk += 1
                         data += chunk
+                    if reads_for_chunk > 1:
+                        partial_reads += 1
+                    recv_count += 1
+                    recv_bytes += len(data)
                     if self._loop and self._queue:
                         self._loop.call_soon_threadsafe(self._enqueue, data)
-            except (ConnectionError, OSError):
-                logger.warning("[net-mic] Client disconnected — waiting for reconnect...")
+                    # Log stats every 5 seconds
+                    now = time.monotonic()
+                    if now - t0 >= 5.0:
+                        elapsed = now - t0
+                        qsize = self._queue.qsize() if self._queue else -1
+                        logger.info(
+                            "[net-mic] TCP recv: %d chunks (%.1f/s), %d bytes, "
+                            "%d partial reads, queue=%d, dropped=%d",
+                            recv_count, recv_count / elapsed,
+                            recv_bytes, partial_reads, qsize, self._dropped,
+                        )
+                        recv_count = 0
+                        recv_bytes = 0
+                        partial_reads = 0
+                        t0 = now
+            except (ConnectionError, OSError) as e:
+                logger.warning("[net-mic] Client disconnected (%s) — waiting for reconnect...", e)
                 ui.info("[bold yellow]Network mic disconnected — waiting for reconnect...[/]")
             finally:
                 conn.close()
@@ -145,9 +171,14 @@ class NetworkMicStream:
         """
         import time
         self._tick_start = time.monotonic()
+        pump_chunks = 0
+        pump_bytes = 0
+        pump_t0 = time.monotonic()
         try:
             while self._running:
                 chunk = await self._queue.get()
+                pump_chunks += 1
+                pump_bytes += len(chunk)
                 if self._on_chunk is None:
                     continue
                 if self._pending_flush and self._on_mute_flush is not None:
@@ -178,6 +209,19 @@ class NetworkMicStream:
                     self._rms_sum_in_tick = 0
                     self._rms_peak_in_tick = 0
                     self._tick_start = now
+                # Log pump throughput every 5s
+                if now - pump_t0 >= 5.0:
+                    elapsed = now - pump_t0
+                    qsize = self._queue.qsize() if self._queue else -1
+                    logger.info(
+                        "[net-mic] pump: %d chunks forwarded (%.1f/s), %d bytes, "
+                        "queue=%d, muted=%s",
+                        pump_chunks, pump_chunks / elapsed,
+                        pump_bytes, qsize, self._muted,
+                    )
+                    pump_chunks = 0
+                    pump_bytes = 0
+                    pump_t0 = now
         except asyncio.CancelledError:
             raise
 

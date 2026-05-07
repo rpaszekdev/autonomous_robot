@@ -197,6 +197,193 @@ BUILTIN_ICONS: dict[str, list[list[int]]] = {
     ],
 }
 
+FACES["excited"] = {
+    "closed": [
+        [0, 0, 1, 1, 1, 1, 0, 0],
+        [0, 1, 0, 0, 0, 0, 1, 0],
+        [1, 1, 1, 0, 0, 1, 1, 1],
+        [1, 0, 0, 0, 0, 0, 0, 1],
+        [1, 0, 1, 0, 0, 1, 0, 1],
+        [1, 0, 0, 1, 1, 0, 0, 1],
+        [0, 1, 0, 0, 0, 0, 1, 0],
+        [0, 0, 1, 1, 1, 1, 0, 0],
+    ],
+    "open": [
+        [0, 0, 1, 1, 1, 1, 0, 0],
+        [0, 1, 0, 0, 0, 0, 1, 0],
+        [1, 1, 1, 0, 0, 1, 1, 1],
+        [1, 0, 0, 0, 0, 0, 0, 1],
+        [1, 0, 0, 1, 1, 0, 0, 1],
+        [1, 0, 1, 0, 0, 1, 0, 1],
+        [0, 1, 0, 1, 1, 0, 1, 0],
+        [0, 0, 1, 1, 1, 1, 0, 0],
+    ],
+}
+
+FACES["sleepy"] = {
+    "closed": [
+        [0, 0, 1, 1, 1, 1, 0, 0],
+        [0, 1, 0, 0, 0, 0, 1, 0],
+        [1, 0, 0, 0, 0, 0, 0, 1],
+        [1, 0, 1, 1, 0, 1, 1, 1],
+        [1, 0, 0, 0, 0, 0, 0, 1],
+        [1, 0, 1, 1, 1, 1, 0, 1],
+        [0, 1, 0, 0, 0, 0, 1, 0],
+        [0, 0, 1, 1, 1, 1, 0, 0],
+    ],
+    "open": [
+        [0, 0, 1, 1, 1, 1, 0, 0],
+        [0, 1, 0, 0, 0, 0, 1, 0],
+        [1, 0, 0, 0, 0, 0, 0, 1],
+        [1, 0, 1, 1, 0, 1, 1, 1],
+        [1, 0, 0, 1, 1, 0, 0, 1],
+        [1, 0, 1, 0, 0, 1, 0, 1],
+        [0, 1, 0, 1, 1, 0, 1, 0],
+        [0, 0, 1, 1, 1, 1, 0, 0],
+    ],
+}
+
+FACES["wink"] = {
+    "closed": [
+        [0, 0, 1, 1, 1, 1, 0, 0],
+        [0, 1, 0, 0, 0, 0, 1, 0],
+        [1, 0, 1, 0, 0, 1, 0, 1],
+        [1, 0, 0, 0, 0, 1, 0, 1],
+        [1, 0, 1, 0, 0, 1, 0, 1],
+        [1, 0, 0, 1, 1, 0, 0, 1],
+        [0, 1, 0, 0, 0, 0, 1, 0],
+        [0, 0, 1, 1, 1, 1, 0, 0],
+    ],
+    "open": [
+        [0, 0, 1, 1, 1, 1, 0, 0],
+        [0, 1, 0, 0, 0, 0, 1, 0],
+        [1, 0, 1, 0, 0, 1, 0, 1],
+        [1, 0, 0, 0, 0, 1, 0, 1],
+        [1, 0, 0, 1, 1, 0, 0, 1],
+        [1, 0, 1, 0, 0, 1, 0, 1],
+        [0, 1, 0, 1, 1, 0, 1, 0],
+        [0, 0, 1, 1, 1, 1, 0, 0],
+    ],
+}
+
+# Built-in animations Gemini can trigger by name
+BUILTIN_ANIMATIONS: dict[str, list[dict]] = {
+    "wave": [
+        {"pixels": [
+            [0,0,0,0,1,1,0,0],
+            [0,0,0,1,0,0,1,0],
+            [0,0,0,1,0,0,1,0],
+            [0,0,0,0,1,1,0,0],
+            [0,0,0,0,1,0,0,0],
+            [0,0,0,1,1,1,0,0],
+            [0,0,1,0,1,0,0,0],
+            [0,0,0,0,1,0,0,0],
+        ], "duration_ms": 300},
+        {"pixels": [
+            [0,0,1,1,0,0,0,0],
+            [0,1,0,0,1,0,0,0],
+            [0,1,0,0,1,0,0,0],
+            [0,0,1,1,0,0,0,0],
+            [0,0,0,1,0,0,0,0],
+            [0,0,1,1,1,0,0,0],
+            [0,0,1,0,1,0,0,0],
+            [0,0,0,0,1,0,0,0],
+        ], "duration_ms": 300},
+        {"pixels": [
+            [1,1,0,0,0,0,0,0],
+            [0,0,1,0,0,0,0,0],
+            [0,0,1,0,0,0,0,0],
+            [1,1,0,0,0,0,0,0],
+            [0,0,0,1,0,0,0,0],
+            [0,0,1,1,1,0,0,0],
+            [0,0,1,0,1,0,0,0],
+            [0,0,0,0,1,0,0,0],
+        ], "duration_ms": 300},
+        {"pixels": [
+            [0,0,1,1,0,0,0,0],
+            [0,1,0,0,1,0,0,0],
+            [0,1,0,0,1,0,0,0],
+            [0,0,1,1,0,0,0,0],
+            [0,0,0,1,0,0,0,0],
+            [0,0,1,1,1,0,0,0],
+            [0,0,1,0,1,0,0,0],
+            [0,0,0,0,1,0,0,0],
+        ], "duration_ms": 300},
+        {"pixels": [
+            [0,0,0,0,1,1,0,0],
+            [0,0,0,1,0,0,1,0],
+            [0,0,0,1,0,0,1,0],
+            [0,0,0,0,1,1,0,0],
+            [0,0,0,0,1,0,0,0],
+            [0,0,0,1,1,1,0,0],
+            [0,0,1,0,1,0,0,0],
+            [0,0,0,0,1,0,0,0],
+        ], "duration_ms": 300},
+    ],
+    "heartbeat": [
+        {"icon": "heart", "duration_ms": 200},
+        {"pixels": [[0]*8 for _ in range(8)], "duration_ms": 150},
+        {"icon": "heart", "duration_ms": 200},
+        {"pixels": [[0]*8 for _ in range(8)], "duration_ms": 400},
+        {"icon": "heart", "duration_ms": 200},
+        {"pixels": [[0]*8 for _ in range(8)], "duration_ms": 150},
+        {"icon": "heart", "duration_ms": 200},
+        {"pixels": [[0]*8 for _ in range(8)], "duration_ms": 400},
+    ],
+    "sparkle": [
+        {"pixels": [
+            [1,0,0,0,0,0,0,1],
+            [0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0],
+            [1,0,0,0,0,0,0,1],
+        ], "duration_ms": 150},
+        {"pixels": [
+            [0,0,0,0,0,0,0,0],
+            [0,1,0,0,0,0,1,0],
+            [0,0,0,0,0,0,0,0],
+            [0,0,0,1,1,0,0,0],
+            [0,0,0,1,1,0,0,0],
+            [0,0,0,0,0,0,0,0],
+            [0,1,0,0,0,0,1,0],
+            [0,0,0,0,0,0,0,0],
+        ], "duration_ms": 150},
+        {"pixels": [
+            [0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0],
+            [0,0,1,0,0,1,0,0],
+            [0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0],
+            [0,0,1,0,0,1,0,0],
+            [0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0],
+        ], "duration_ms": 150},
+        {"pixels": [
+            [0,0,0,1,1,0,0,0],
+            [0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0],
+            [1,0,0,0,0,0,0,1],
+            [1,0,0,0,0,0,0,1],
+            [0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0],
+            [0,0,0,1,1,0,0,0],
+        ], "duration_ms": 150},
+        {"pixels": [
+            [1,0,0,0,0,0,0,1],
+            [0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0],
+            [0,0,0,0,0,0,0,0],
+            [1,0,0,0,0,0,0,1],
+        ], "duration_ms": 150},
+    ],
+}
+
 TALK_INTERVAL = 0.2
 
 # Tic-tac-toe on 8x8 grid.
@@ -227,19 +414,26 @@ _CELL_ORIGINS = [
 def _render_tictactoe(board: str) -> list[list[int]]:
     grid = [[0] * 8 for _ in range(8)]
 
+    # Draw grid lines (columns 2,5 and rows 2,5)
+    for i in range(8):
+        grid[2][i] = 1
+        grid[5][i] = 1
+        grid[i][2] = 1
+        grid[i][5] = 1
+
     for idx, ch in enumerate(board[:9]):
         upper = ch.upper()
         if upper not in ("X", "O"):
             continue
         r, c = _CELL_ORIGINS[idx]
         if upper == "X":
-            # filled 2x2 block — very bright
+            # filled 2x2 block
             grid[r][c] = 1
             grid[r][c + 1] = 1
             grid[r + 1][c] = 1
             grid[r + 1][c + 1] = 1
         else:
-            # single center dot — clearly different from X
+            # diagonal dots — clearly different from X
             grid[r][c + 1] = 1
             grid[r + 1][c] = 1
 
@@ -392,7 +586,18 @@ class DisplayToolService:
         if tictactoe is not None:
             return self._handle_tictactoe(tictactoe)
 
+        play_animation = args.get("play_animation")
+        if play_animation is not None:
+            anim_name = str(play_animation).lower()
+            builtin = BUILTIN_ANIMATIONS.get(anim_name)
+            if builtin is None:
+                available = list(BUILTIN_ANIMATIONS.keys())
+                return {"error": f"Unknown animation '{anim_name}'. Available: {available}"}
+            self._pinned = True
+            return await self._run_animation(builtin)
+
         if animation is not None:
+            self._pinned = True
             return await self._run_animation(animation)
 
         return {"error": "Provide one of: face, icon, pixels, text, tictactoe, animation, or clear."}
@@ -451,22 +656,32 @@ class DisplayToolService:
             return {"error": "Animation too long (max 30 frames)."}
 
         async def _play() -> None:
-            for frame in frames:
-                if not isinstance(frame, dict):
-                    continue
-                duration_ms = frame.get("duration_ms", 300)
+            try:
+                last_grid = None
+                for frame in frames:
+                    if not isinstance(frame, dict):
+                        continue
+                    duration_ms = frame.get("duration_ms", 300)
 
-                face_name = frame.get("face")
-                icon_name = frame.get("icon")
-                if face_name and face_name in FACES:
-                    self._matrix.draw_grid(FACES[face_name]["closed"])
-                    self._current_face = face_name
-                elif icon_name and icon_name in BUILTIN_ICONS:
-                    self._matrix.draw_grid(BUILTIN_ICONS[icon_name])
-                elif "pixels" in frame:
-                    self._matrix.draw_grid(_normalize_grid(frame["pixels"]))
+                    face_name = frame.get("face")
+                    icon_name = frame.get("icon")
+                    if face_name and face_name in FACES:
+                        last_grid = FACES[face_name]["closed"]
+                        self._matrix.draw_grid(last_grid)
+                        self._current_face = face_name
+                    elif icon_name and icon_name in BUILTIN_ICONS:
+                        last_grid = BUILTIN_ICONS[icon_name]
+                        self._matrix.draw_grid(last_grid)
+                    elif "pixels" in frame:
+                        last_grid = _normalize_grid(frame["pixels"])
+                        self._matrix.draw_grid(last_grid)
 
-                await asyncio.sleep(max(50, min(5000, int(duration_ms))) / 1000.0)
+                    await asyncio.sleep(max(50, min(5000, int(duration_ms))) / 1000.0)
+
+                if last_grid is not None:
+                    self._current_custom = last_grid
+            except asyncio.CancelledError:
+                pass
 
         self._animation_task = asyncio.create_task(_play())
         return {"ok": True, "action": "animation", "frames": len(frames)}

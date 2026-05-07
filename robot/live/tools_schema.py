@@ -194,11 +194,14 @@ SET_LEDS = types.FunctionDeclaration(
 SET_DISPLAY = types.FunctionDeclaration(
     name="set_display",
     description=(
-        "Control the 8x8 LED dot matrix display. You have a tiny 8x8 pixel screen. "
-        "IMPORTANT: Use 'face' to set emotion faces (happy, sad, neutral, angry, surprised) — "
-        "these automatically animate a talking mouth when you speak! Set the face BEFORE you "
-        "reply so the mouth moves while you talk. Use 'icon' for non-face symbols (heart, "
-        "check, x, question, arrow_up, skull). Use 'pixels' for custom 8x8 pixel art. "
+        "Control the 8x8 LED dot matrix display — your face and creative canvas! "
+        "IMPORTANT: Use 'face' to set emotion faces (happy, sad, neutral, angry, surprised, "
+        "excited, sleepy, wink) — these automatically animate a talking mouth when you speak! "
+        "Set the face BEFORE you reply so the mouth moves while you talk. "
+        "Use 'play_animation' for built-in animations like 'wave' when someone says hi! "
+        "Use 'pixels' for custom 8x8 pixel art — draw ANYTHING you can imagine. "
+        "Use 'animation' to create your OWN multi-frame animations from scratch — "
+        "be an artist! Draw fireworks, rain, bouncing balls, spirals, whatever fits the moment. "
         "Use PROACTIVELY — always set a face before responding to show your mood."
     ),
     parameters=types.Schema(
@@ -208,7 +211,7 @@ SET_DISPLAY = types.FunctionDeclaration(
                 type=types.Type.STRING,
                 description=(
                     "Set an emotion face that animates when you speak. "
-                    "Options: happy, sad, neutral, angry, surprised. "
+                    "Options: happy, sad, neutral, angry, surprised, excited, sleepy, wink. "
                     "ALWAYS set this before replying so the mouth moves while you talk."
                 ),
             ),
@@ -249,12 +252,22 @@ SET_DISPLAY = types.FunctionDeclaration(
                 type=types.Type.BOOLEAN,
                 description="If true, scroll the text across the display.",
             ),
+            "play_animation": types.Schema(
+                type=types.Type.STRING,
+                description=(
+                    "Play a built-in animation by name: 'wave' (wave hello!), "
+                    "'heartbeat' (pulsing heart), 'sparkle' (twinkling stars). "
+                    "Use 'wave' when someone says hi or greets you!"
+                ),
+            ),
             "animation": types.Schema(
                 type=types.Type.ARRAY,
                 description=(
-                    "Sequence of frames to animate. Each frame has 'icon' or 'pixels' "
-                    "and 'duration_ms'. Max 30 frames. Use for blinking faces, "
-                    "countdowns, visual effects."
+                    "Create your OWN custom animation! Sequence of frames, each with "
+                    "'pixels' (8x8 grid) and 'duration_ms'. Max 30 frames. "
+                    "Be creative — draw anything: fireworks, rain, bouncing ball, "
+                    "explosions, spinning shapes, dancing figures. Invent new things! "
+                    "You're an artist with a tiny 8x8 canvas."
                 ),
                 items=types.Schema(
                     type=types.Type.OBJECT,

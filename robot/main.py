@@ -183,8 +183,8 @@ async def _async_main(args: argparse.Namespace) -> int:
         wake = KeyboardWake(loop)
     else:
         camera = pi_camera()
-        motors = gpio_motors(left_pins=(7, 8), right_pins=(9, 10))
-        gpio = rpi_gpio()
+        motors = MockMotors()  # SPI uses GPIO 7/8; no motors on this robot
+        gpio = MockGpio()  # no LEDs wired; avoids GPIO busy conflicts with SPI
         if args.wake_model is None:
             wake = KeyboardWake(loop)
         else:

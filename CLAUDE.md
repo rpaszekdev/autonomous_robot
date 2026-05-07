@@ -47,7 +47,7 @@ python scripts/play_robot_audio.py
 ## Pi Connection
 - Host: `raspberrypi.local` / `172.20.10.5`
 - User: `davidtzuke`
-- SSH key: `~/.ssh/id_ed25519`
+- SSH key: `~/.ssh/pi_key`
 - Robot code path: `~/autonomous_robot/autonomous_robot/autonomous_robot/`
 
 ## Running on Pi

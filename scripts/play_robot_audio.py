@@ -29,8 +29,18 @@ def stream_once():
     started = threading.Event()
     done = threading.Event()
 
+    # --- logging stats ---
+    stats = {
+        "recv_count": 0, "recv_bytes": 0, "frames_queued": 0,
+        "underruns": 0, "oversize": 0, "timeouts": 0,
+        "cb_calls": 0, "cb_silence": 0, "t0": time.monotonic(),
+    }
+
     def audio_callback(outdata, frames, time_info, status):
         needed = frames * 2
+        stats["cb_calls"] += 1
+        if status:
+            print(f"  [playback] status: {status}")
         with lock:
             if buf:
                 data = buf.popleft()
@@ -43,6 +53,7 @@ def stream_once():
                 outdata[:] = np.frombuffer(data, dtype=np.int16).reshape(-1, 1)
             else:
                 outdata[:] = np.zeros((frames, 1), dtype=np.int16)
+                stats["cb_silence"] += 1
 
     stream = sd.OutputStream(
         samplerate=SAMPLE_RATE,
@@ -60,10 +71,14 @@ def stream_once():
             try:
                 chunk = sock.recv(8192)
             except socket.timeout:
+                stats["timeouts"] += 1
                 continue
             if not chunk:
+                print(f"  [recv] EOF from server")
                 break
 
+            stats["recv_count"] += 1
+            stats["recv_bytes"] += len(chunk)
             leftover += chunk
             # Chop into aligned frames
             while len(leftover) >= FRAME_BYTES:
@@ -71,14 +86,49 @@ def stream_once():
                 leftover = leftover[FRAME_BYTES:]
                 with lock:
                     buf.append(frame)
+                    stats["frames_queued"] += 1
                 if not started.is_set():
                     pre_buffered += 1
                     if pre_buffered >= PRE_BUFFER_FRAMES:
+                        print(f"  [playback] pre-buffer filled, starting playback")
                         stream.start()
                         started.set()
+
+            # Log stats every 5 seconds
+            now = time.monotonic()
+            if now - stats["t0"] >= 5.0:
+                elapsed = now - stats["t0"]
+                with lock:
+                    buflen = len(buf)
+                rms_str = ""
+                if stats["frames_queued"] > 0:
+                    # compute RMS of last received chunk for diagnostics
+                    try:
+                        samples = np.frombuffer(chunk, dtype=np.int16)
+                        rms = int(np.sqrt(np.mean(samples.astype(np.float64) ** 2)))
+                        rms_str = f" rms={rms}"
+                    except Exception:
+                        pass
+                print(
+                    f"  [stats] recv={stats['recv_count']} ({stats['recv_count']/elapsed:.1f}/s) "
+                    f"bytes={stats['recv_bytes']} frames_queued={stats['frames_queued']} "
+                    f"buf_depth={buflen} cb_calls={stats['cb_calls']} "
+                    f"silence={stats['cb_silence']} timeouts={stats['timeouts']}"
+                    f"{rms_str} leftover={len(leftover)}"
+                )
+                stats["recv_count"] = 0
+                stats["recv_bytes"] = 0
+                stats["frames_queued"] = 0
+                stats["cb_calls"] = 0
+                stats["cb_silence"] = 0
+                stats["timeouts"] = 0
+                stats["t0"] = now
     finally:
         # Drain remaining audio
         if started.is_set():
+            with lock:
+                remaining = len(buf)
+            print(f"  [drain] draining {remaining} buffered frames...")
             while True:
                 with lock:
                     empty = len(buf) == 0

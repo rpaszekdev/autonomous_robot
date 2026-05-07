@@ -112,8 +112,12 @@ async def _run_one_session(
 
     async def on_tool_call(name: str, args: dict) -> dict:
         ui.tool_call(name, args)
+        t0 = asyncio.get_event_loop().time()
         result = await dispatcher(name, args)
+        elapsed = asyncio.get_event_loop().time() - t0
         ui.tool_result(name, result)
+        if elapsed > 0.1:
+            ui.info(f"[dim]tool {name} took {elapsed*1000:.0f} ms[/]")
         return result
 
     async def send_image_to_session(jpeg: bytes) -> None:
@@ -190,15 +194,13 @@ async def _run_one_session(
     mic_announced = False
     ui.speaker_started()
 
+    # Identify once at session start — skip on reconnects to avoid 2s delay
+    person_id, person_name = _identify_person(services)
+    services.memory.set_active_person(person_id)
+
     try:
         while not shutdown.is_set():
             socket_count += 1
-
-            # Identify the person in frame before opening the session so we can
-            # tailor the system instruction and load their memory profile.
-            # This is a local-only operation — nothing is sent to Gemini.
-            person_id, person_name = _identify_person(services)
-            services.memory.set_active_person(person_id)
 
             session = GeminiLiveSession(
                 api_key=cfg.google_api_key,
@@ -311,7 +313,7 @@ async def _heartbeat(session: GeminiLiveSession, shutdown: asyncio.Event) -> Non
     last_audio = 0
     while not shutdown.is_set():
         try:
-            await asyncio.wait_for(shutdown.wait(), timeout=3.0)
+            await asyncio.wait_for(shutdown.wait(), timeout=10.0)
             return
         except asyncio.TimeoutError:
             pass
@@ -321,7 +323,7 @@ async def _heartbeat(session: GeminiLiveSession, shutdown: asyncio.Event) -> Non
         # Emit only in "waiting" states OR if counters moved since last tick
         quiet_state = session.current_state in ("listening", "")
         moved = (mic != last_mic) or (audio != last_audio)
-        if elapsed >= 3.0 and (quiet_state or moved):
+        if elapsed >= 10.0 and (quiet_state or moved):
             ui.heartbeat(
                 session.current_state or "opening",
                 elapsed,

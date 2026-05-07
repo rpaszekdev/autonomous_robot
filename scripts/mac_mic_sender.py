@@ -20,6 +20,15 @@ TARGET_RATE = 16000
 BLOCK_MS = 100
 DEFAULT_PORT = 9999
 
+# --- logging stats ---
+_send_lock = threading.Lock()
+_send_count = 0
+_send_bytes = 0
+_send_errors = 0
+_send_rms_sum = 0
+_send_rms_peak = 0
+_send_t0 = time.monotonic()
+
 
 def main():
     if len(sys.argv) < 2:
@@ -52,17 +61,43 @@ def main():
         broken = threading.Event()
 
         def callback(indata, frames, time_info, status):
+            global _send_count, _send_bytes, _send_errors, _send_rms_sum, _send_rms_peak, _send_t0
             if broken.is_set():
                 raise sd.CallbackAbort
             if status:
                 print(f"  sounddevice: {status}", file=sys.stderr)
             samples = indata[:, 0].astype(np.float32)
+            # RMS of raw input
+            rms = int(np.sqrt(np.mean(samples.astype(np.float64) ** 2)))
             if hw_rate != TARGET_RATE:
                 samples = resample_poly(samples, up, down)
             pcm = samples.astype(np.int16).tobytes()
             try:
                 sock.sendall(pcm)
+                with _send_lock:
+                    _send_count += 1
+                    _send_bytes += len(pcm)
+                    _send_rms_sum += rms
+                    if rms > _send_rms_peak:
+                        _send_rms_peak = rms
+                    now = time.monotonic()
+                    if now - _send_t0 >= 5.0:
+                        elapsed = now - _send_t0
+                        avg_rms = _send_rms_sum // max(_send_count, 1)
+                        print(
+                            f"  [stats] sent={_send_count} ({_send_count/elapsed:.1f}/s) "
+                            f"bytes={_send_bytes} rms_avg={avg_rms} rms_peak={_send_rms_peak} "
+                            f"errors={_send_errors} pcm_len={len(pcm)}"
+                        )
+                        _send_count = 0
+                        _send_bytes = 0
+                        _send_errors = 0
+                        _send_rms_sum = 0
+                        _send_rms_peak = 0
+                        _send_t0 = now
             except (BrokenPipeError, OSError):
+                with _send_lock:
+                    _send_errors += 1
                 broken.set()
                 raise sd.CallbackAbort
 
