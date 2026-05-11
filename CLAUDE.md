@@ -32,6 +32,8 @@ python3 -m robot.main --network-audio
 This starts a TCP server on port 9999 waiting for mic audio.
 
 **Mac side (two terminals):**
+
+**For personal hotspot or local network (mDNS works):**
 ```bash
 # Terminal 1 — send mic audio to Pi
 python scripts/mac_mic_sender.py raspberrypi.local
@@ -40,9 +42,26 @@ python scripts/mac_mic_sender.py raspberrypi.local
 python scripts/play_robot_audio.py
 ```
 
+**For enterprise networks (eduroam, corporate WiFi — mDNS blocked):**
+```bash
+# Terminal 1 — send mic audio to Pi (use IP instead of hostname)
+python scripts/mac_mic_sender.py 172.20.10.5
+
+# Terminal 2 — hear robot audio from Pi
+python scripts/play_robot_audio.py 172.20.10.5
+```
+
+Or use environment variables:
+```bash
+export PI_HOST=172.20.10.5  # or raspberrypi.local
+python scripts/mac_mic_sender.py $PI_HOST
+python scripts/play_robot_audio.py
+```
+
 - `mac_mic_sender.py` captures Mac mic, resamples to 16kHz, streams over TCP port 9999
 - `play_robot_audio.py` connects to Pi TCP port 9001, plays 24kHz robot speech on Mac speakers
 - Both auto-reconnect on disconnect
+- **Use IP address (172.20.10.5) on networks that block mDNS (eduroam, corporate WiFi)**
 
 ## Pi Connection
 - Host: `raspberrypi.local` / `172.20.10.5`

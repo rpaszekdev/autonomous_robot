@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Stream robot audio from Pi TCP port 9001 and play on Mac speakers.
 Auto-reconnects. Buffers to smooth network jitter.
+
+Usage:
+    python scripts/play_robot_audio.py                      # use raspberrypi.local
+    python scripts/play_robot_audio.py 172.20.10.5          # use IP address
+    PI_HOST=192.168.1.100 python scripts/play_robot_audio.py   # env var
 """
 import socket
 import struct
@@ -9,9 +14,15 @@ import threading
 import collections
 import sounddevice as sd
 import numpy as np
+import sys
+import os
 
-PI_HOST = "raspberrypi.local"
-PI_PORT = 9001
+# Accept PI_HOST from command line, environment variable, or default
+if len(sys.argv) > 1:
+    PI_HOST = sys.argv[1]
+else:
+    PI_HOST = os.environ.get("PI_HOST", "raspberrypi.local")
+PI_PORT = int(os.environ.get("PI_PORT", "9001"))
 SAMPLE_RATE = 24000
 CHANNELS = 1
 FRAME_SIZE = 2400          # 100ms @ 24kHz for sounddevice callback
@@ -21,9 +32,17 @@ PRE_BUFFER_FRAMES = 8     # buffer 800ms before starting playback to absorb WiFi
 def stream_once():
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.settimeout(10)
-    sock.connect((PI_HOST, PI_PORT))
+    try:
+        sock.connect((PI_HOST, PI_PORT))
+        print(f"Connected to {PI_HOST}:{PI_PORT}")
+    except (OSError, socket.gaierror) as e:
+        print(f"Failed to connect to {PI_HOST}:{PI_PORT}: {e}")
+        if PI_HOST == "raspberrypi.local":
+            print("  Hint: mDNS may be blocked on this network. Try:")
+            print("    python scripts/play_robot_audio.py <PI_IP_ADDRESS>")
+            print("  or set: export PI_HOST=<PI_IP_ADDRESS>")
+        raise
     sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-    print(f"Connected to {PI_HOST}:{PI_PORT}")
 
     buf = collections.deque()
     lock = threading.Lock()
@@ -149,7 +168,8 @@ def stream_once():
 
 
 def main():
-    print("Streaming robot audio to Mac speakers... (Ctrl+C to stop)")
+    print(f"Streaming robot audio from {PI_HOST}:{PI_PORT}...")
+    print(f"(Set PI_HOST env var or pass as argument to change target)")
     while True:
         try:
             stream_once()

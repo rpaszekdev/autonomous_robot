@@ -79,10 +79,20 @@ def _sender_thread(sock: socket.socket, send_q: queue.Queue, broken: threading.E
 def main():
     if len(sys.argv) < 2:
         print(f"Usage: python {sys.argv[0]} <PI_HOST> [PORT]")
+        print(f"\nExamples:")
+        print(f"  python {sys.argv[0]} raspberrypi.local")
+        print(f"  python {sys.argv[0]} 172.20.10.5")
+        print(f"  python {sys.argv[0]} 192.168.1.100 9999")
+        print(f"\nNote: Use IP address if 'raspberrypi.local' fails (e.g., on eduroam).")
         sys.exit(1)
 
     host = sys.argv[1]
     port = int(sys.argv[2]) if len(sys.argv) > 2 else DEFAULT_PORT
+    
+    # Provide helpful hints for common issues
+    if host == "raspberrypi.local":
+        print(f"Attempting to connect to {host}:{port}...")
+        print(f"Hint: If this fails, try with IP address instead (e.g., 172.20.10.5)")
 
     dev_info = sd.query_devices(kind="input")
     hw_rate = int(dev_info["default_samplerate"])
@@ -99,8 +109,12 @@ def main():
             sock.connect((host, port))
             sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             print("Connected — streaming mic audio")
-        except (ConnectionRefusedError, OSError) as e:
-            print(f"Can't connect: {e} — retrying in 2s...")
+        except (ConnectionRefusedError, OSError, socket.gaierror) as e:
+            print(f"Can't connect to {host}:{port}: {e}")
+            if host == "raspberrypi.local":
+                print(f"  Hint: mDNS resolution failed (common on eduroam).")
+                print(f"  Try using IP address: python {sys.argv[0]} <PI_IP_ADDRESS>")
+            print(f"  Retrying in 2s...")
             sock.close()
             time.sleep(2)
             continue
